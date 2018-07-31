@@ -1,4 +1,5 @@
 
+#if 0
 #include <format.h>
 #include <ostream.h>
 #include <conduit/conduit.h>
@@ -93,4 +94,10 @@ int main(int argc, char *argv[])
         run_lua_file(L, argv[i]);
 
     bar();
+}
+
+#endif
+int main()
+{
+    
 }

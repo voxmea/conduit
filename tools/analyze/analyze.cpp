@@ -21,6 +21,8 @@
 #include <numeric>
 #ifdef _MSC_VER
 #include <filesystem>
+#elif __APPLE__
+#include <libgen.h>
 #else
 #include <experimental/filesystem>
 #endif

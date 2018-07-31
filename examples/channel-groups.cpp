@@ -1,4 +1,6 @@
 
+#define CONDUIT_NO_LUA
+#define CONDUIT_NO_PYTHON
 #include <conduit/conduit.h>
 
 using namespace conduit;

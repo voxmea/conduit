@@ -1,6 +1,9 @@
 
-#include <format.h>
+#include <fmt/format.h>
+#define CONDUIT_NO_LUA
+#define CONDUIT_NO_PYTHON
 #include <conduit/conduit.h>
+#include <conduit/function.h>
 #include <string>
 #include <iostream>
 #include <algorithm>
@@ -10,7 +13,7 @@
 struct QueueEntry
 {
     int priority;
-    conduit::SmallCallable<void()> event;
+    conduit::Function<void()> event;
 
     friend bool operator <(const QueueEntry &lhs, const QueueEntry &rhs)
     {
@@ -20,9 +23,7 @@ struct QueueEntry
 
 int main(int argc, char const *argv[])
 {
-    lua_State *L = luaL_newstate();
-    luaL_openlibs(L);
-    conduit::Registrar reg("reg", L);
+    conduit::Registrar reg("reg", nullptr);
 
     // This example uses 2 channels to demonstrate how our queue can hold
     // channels of any signature.

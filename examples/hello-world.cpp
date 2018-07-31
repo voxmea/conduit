@@ -1,4 +1,6 @@
-#include <format.h>
+#include <fmt/format.h>
+#define CONDUIT_NO_LUA
+#define CONDUIT_NO_PYTHON
 #include <conduit/conduit.h>
 #include <string>
 #include <iostream>
@@ -12,15 +14,11 @@ void opposite_printer(const std::string &s)
 
 int main(int argc, char const *argv[])
 {
-    lua_State *L = luaL_newstate();
-    luaL_openlibs(L);
-    conduit::lua::LuaGlobal::lua() = L;
-
     // Create a registrar. This represents a single namespace in which to find
     // channels and Registrars are the only way to create a channel. Components
     // in your model that communicate over channels would need to be passed the
     // same Registrar to find the required channels.
-    conduit::Registrar reg("reg", L);
+    conduit::Registrar reg("reg", nullptr);
 
     // Lookup the "print channel". This provides a handle that can be used to
     // send messages on the channel.
@@ -35,11 +33,6 @@ int main(int argc, char const *argv[])
     }, "consumer", -1);
 
     reg.lookup<void(std::string)>("print channel").hook(opposite_printer, "consumer", 1);
-
-    // Finally, hook the print channel from Lua (note, the Lua here is embedded,
-    // but this is a convenience only, and is identical to passing in a Lua
-    // file)
-    conduit::run_string(L, "conduit.registrars.reg.hook('print channel', function(s) io.write(','..s..',') end, 'lua consumer')");
 
     // generate a random string of 0s and 1s.
     std::random_device rd;

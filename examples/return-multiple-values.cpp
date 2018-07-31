@@ -1,7 +1,9 @@
 
-#include <format.h>
-#include <ostream.h>
+#include <fmt/format.h>
+#include <fmt/ostream.h>
 #include <iostream>
+#define CONDUIT_NO_LUA
+#define CONDUIT_NO_PYTHON
 #include <conduit/conduit.h>
 
 namespace std {
@@ -42,10 +44,7 @@ int my_callback(int i, std::string s)
 
 int main(int argc, char const *argv[])
 {
-    lua_State *L = luaL_newstate();
-    luaL_openlibs(L);
-    conduit::lua::LuaGlobal::lua() = L;
-    conduit::Registrar reg("reg", L);
+    conduit::Registrar reg("reg", nullptr);
 
     auto sig = reg.lookup<int(int)>("sig");
 

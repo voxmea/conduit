@@ -3,6 +3,8 @@
 #include <iostream>
 #include <random>
 #include <cstdint>
+#define CONDUIT_NO_LUA
+#define CONDUIT_NO_PYTHON
 #include <conduit/conduit.h>
 
 int main(int argc, char const *argv[])

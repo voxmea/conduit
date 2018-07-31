@@ -1,4 +1,6 @@
-#include <format.h>
+#include <fmt/format.h>
+#define CONDUIT_NO_LUA
+#define CONDUIT_NO_PYTHON
 #include <conduit/conduit.h>
 #include <string>
 #include <iostream>
@@ -15,12 +17,8 @@ struct NoDefaultConstruct
 
 int main(int argc, char const *argv[])
 {
-    lua_State *L = luaL_newstate();
-    luaL_openlibs(L);
-    conduit::lua::LuaGlobal::lua() = L;
-
     {
-        conduit::Registrar reg("reg", L);
+        conduit::Registrar reg("reg", nullptr);
 
         auto print_1 = reg.lookup<void(std::reference_wrapper<std::string>)>("print 1 channel", "main");
         auto print_2 = reg.lookup<void(std::string)>("print 2 channel", "main");
@@ -37,7 +35,7 @@ int main(int argc, char const *argv[])
     }
 
     {
-        conduit::Registrar reg("reg", L);
+        conduit::Registrar reg("reg", nullptr);
 
         auto one = reg.lookup<void()>("one", "main");
         auto two = reg.lookup<void()>("two", "main");
@@ -54,7 +52,7 @@ int main(int argc, char const *argv[])
     }
 
     {
-        conduit::Registrar reg("reg", L);
+        conduit::Registrar reg("reg", nullptr);
 
         auto one = reg.lookup<void()>("one", "main");
 
@@ -66,7 +64,7 @@ int main(int argc, char const *argv[])
     }
 
     {
-        conduit::Registrar reg("reg", L);
+        conduit::Registrar reg("reg", nullptr);
 
         auto one = reg.lookup<void(NoDefaultConstruct)>("one", "main");
 
