@@ -8,7 +8,7 @@ Conduit
 
 .. class:: center
 
-https://github.qualcomm.com/mix/conduit
+https://github.com/voxmea/conduit
 
 .. contents::
 
@@ -115,9 +115,6 @@ Modeler contract (1)
     - Self-documenting and easy to review
     - Data flow + timing information
 
-..
-    Thought it would be useful to describe the modeler contract on Roanoke, how we use conduit to ensure our models are doing what we expect
-
 Modeler contract (2)
 --------------------
 
@@ -149,7 +146,7 @@ Conduit integration
 
 - Conduit places no requirements on structure or layout of model code
 - Can integrate into existing modeling infrastructure
-- Event scheduling is orthogonal (but Roanoke is happy to share our event scheduling)
+- Event scheduling is orthogonal (but examples are provided)
 - Gradual integration is easy
 
     - Use existing infrastructure at large boundaries, use conduit everywhere else
@@ -226,12 +223,14 @@ Debugging features
 Scripting integration
 ---------------------
 
-- Lua is well supported (very fast interpreted language)
-- Can be both producer and consumer
-- Flexible Lua/c++ bridge makes language crossing trivial
+- Lua and Python are well supported
+- Flexible Lua/Python/c++ bridge makes language crossing trivial
 
 |
 |
+
+Lua
+```
 
 .. code-block:: lua
 
@@ -239,14 +238,12 @@ Scripting integration
         printf('%s\n', s)
     end, 'lua')
 
-Real-world results
-------------------
+Python
+``````
 
-- Roanoke has modeled 2 |1/4| designs
-- Slowly being integrated into the server interconnect model
-- Server CPU modeling team almost finished with evaluation
+.. code-block:: python
 
-    - Expected to base next-gen model on conduit
+    reg.lookup('print channel').hook('print channel', lambda s: print(s))
 
 .. |1/4| unicode:: U+00BC
 
