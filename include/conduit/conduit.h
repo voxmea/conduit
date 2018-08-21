@@ -867,19 +867,17 @@ struct Registrar
     {
         #ifndef CONDUIT_NO_PYTHON
         pybind11::module m = pybind11::module::import("__main__");
+        pybind11::module conduit = pybind11::reinterpret_borrow<pybind11::module>(PyImport_AddModule("conduit"));
         if (!hasattr(m, "conduit")) {
-            pybind11::module conduit = pybind11::reinterpret_borrow<pybind11::module>(PyImport_AddModule("conduit"));
             setattr(m, "conduit", conduit);
         }
-        auto cond = getattr(m, "conduit");
-        if (!hasattr(cond, "registrars")) {
+        if (!hasattr(conduit, "registrars")) {
             pybind11::dict reg;
-            setattr(cond, "registrars", reg);
+            setattr(conduit, "registrars", reg);
         }
-        auto registrars = getattr(cond, "registrars");
+        auto registrars = getattr(conduit, "registrars");
         pybind11::module me(name.c_str(), "conduit");
         registrars[name.c_str()] = me;
-        // lookup
         // NOTE: if you get visibility warnings from g++ it's a bug, try adding -fvisibility=hidden
         {
             std::function<pybind11::object(pybind11::str, pybind11::str)> py_lookup = [this] (pybind11::str n_, pybind11::str source_) {
@@ -913,7 +911,6 @@ struct Registrar
             // g++ 7.X to ICE
             pybind11::cpp_function f(py_lookup, pybind11::arg("channel name"), pybind11::arg("source") = "Python");
             setattr(me, "lookup", f);
-            pybind11::capsule ptr(this, "ptr");
             pybind11::cpp_function channels = [this, py_lookup] {
                 std::vector<pybind11::object> ret;
                 visit([&ret, &py_lookup] (auto &reb) {
@@ -922,7 +919,7 @@ struct Registrar
                 return ret;
             };
             setattr(me, "channels", channels);
-            setattr(me, "ptr", ptr);
+            setattr(me, "ptr", pybind11::capsule(this, "ptr"));
             setattr(me, "name", pybind11::str(this->name));
         }
         #endif
@@ -1104,7 +1101,6 @@ void Channel<R(T...)>::print_debug_impl(const std::string &source, const T &... 
 #define conduit_run_expand_(x, y) x ## y
 #define conduit_run_expand(x, y) conduit_run_expand_(x, y)
 #define conduit_run(...) std::string conduit_run_expand(conduit_unique_mem_hook_id_, __COUNTER__) = __VA_ARGS__
-
 
 } // namespace conduit
 
