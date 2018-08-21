@@ -20,20 +20,19 @@ What is it?
     - Connections are type safe and identified by function signature and string
     - Excellent software abstraction for both model communication and events 
 
-|
-
 .. code-block:: c++
 
+    // Consumers hook:
     //          signature           name
     //              ↓                 ↓
-    reg.hook<void(std::string)>("print channel",
-    [] (const std::string &s) {
-        printf("%s", s.c_str());
+    reg.hook<void(std::string)>("print channel", [] (auto &s) {
+        std::cout << s;
     });
+    // Producers lookup:                
     //                         signature           name
     //                             ↓                 ↓
-    auto print = reg.lookup<void(std::string)>("print channel");
-    print("hello, world!\n");
+    auto print_channel = reg.lookup<void(std::string)>("print channel");
+    print_channel("hello, world!\n");
 
 ..
     publish/subscribe is a software methodology to connect producers and consumers without the 2 knowing anything about each other. Fantastic way to decouple software components.
@@ -71,15 +70,18 @@ Communication is a useful problem domain
         :height: 200px
         :align: center
 
-Goals
------
+Modeling Goals
+--------------
 
 - Performance and power prediction
 - Architectural and microarchitectural insight
 - RTL correlation
 
-What's wrong with traditional approaches?
------------------------------------------
+.. 
+    Making sure we're all on the same page
+
+What is wrong with traditional approaches?
+------------------------------------------
 
 - Inheritance is the base class of evil
 - Rigid communication/interfaces couples components
@@ -127,16 +129,17 @@ Modeler contract (2)
 Conduit and the modeler contract 
 --------------------------------
 
-- Nothing here that can't be done with other frameworks, with enough time and effort
+- Nothing here that can not be done with other frameworks, with enough time and effort
 - Conduit makes this natural
 
 Overhead
 --------
 
-Call speed relative to non-inlined direct call (c-style call)
+Call speed relative to non-inlined direct call (c-style call) - typical impact to simulation runtime is minimal
 
 .. image:: conduit-speed-test.png
     :align: center
+    :height: 800px
 
 ..
     Note that it's probably doing some devirtualization (but is not inlining actual call)
@@ -159,6 +162,8 @@ Building blocks
 - Every registrar is named (registrar is a namespace, example to follow)
 - `lookup` a channel to send messages
 - `hook` a channel to receive messages
+- Initialization ordering doesn't matter
+- There is no implicit queuing; messages are delivered immediately (but channels pair nicely with an event system)
 
 Example
 -------
@@ -170,15 +175,14 @@ Example
     }
 
     int main(int argc, char const *argv[]) {
-        conduit::Registrar reg("reg", L);
-        auto print = reg.lookup<void(std::string)>("print channel");
-        reg.hook<void(std::string)>("print channel",
-        [] (const std::string &s) {
+        conduit::Registrar reg("reg");
+        reg.hook<void(std::string)>("print channel", [] (auto &s) {
             fmt::print("{}", s);
         });
-        reg.hook< void(std::string) >("print channel", opposite_printer);
+        reg.hook<void(std::string)>("print channel", opposite_printer);
 
-        print("hello");
+        auto print_channel = reg.lookup<void(std::string)>("print channel");
+        print_channel("hello");
     }
 
 Example takeaways
@@ -203,7 +207,7 @@ Configuration
 -------------
 
 - Namespaces provided through registrars
-- **Individual components should be contextually unaware** (they don't know what they connect to, nor the namespace they work in)
+- **Individual components should be contextually unaware** (they do not know what they connect to, nor the namespace they work in)
 - Higher-level configuration performed by connecting channels from separate registrars
 
     - Connections performed by configuration code, not model code
@@ -216,7 +220,7 @@ Debugging features
 - Each channel has built-in printing capabilities
 
     - Per-channel control over debug output (very useful for developers to isolate their area of the model)
-    - Debug output doesn't litter model code, automatic at the interface
+    - Debug output does not litter model code, automatic at the interface
 
 - Custom types supported by ADL (customization points)
 
@@ -234,16 +238,14 @@ Lua
 
 .. code-block:: lua
 
-    conduit.regisrars.reg.hook('print channel', function(s)
-        printf('%s\n', s)
-    end, 'lua')
+    reg.hook('print channel', function(s) printf('%s\n', s) end)
 
 Python
 ``````
 
 .. code-block:: python
 
-    reg.lookup('print channel').hook('print channel', lambda s: print(s))
+    reg.lookup('print channel').hook(lambda s: print(s))
 
 .. |1/4| unicode:: U+00BC
 
@@ -253,3 +255,4 @@ Summary
 - A tweak to our view of the problem enables new tools to tackle a complicated software problem
 - Conduit enables a wide variety of improvements without needing to rewrite model source
 - The publish/subscribe framework enables more cross-team collaboration (both in model libraries, and with model tools)
+- Improves debuggability, testability, and metrics collection.
