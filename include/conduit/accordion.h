@@ -10,7 +10,7 @@
 #include <tuple>
 #include "fixvec.h"
 
-namespace mix
+namespace conduit
 {
 
 namespace detail

@@ -19,7 +19,7 @@
 
 #ifdef USE_FIXVEC_POOL
 #include <vector>
-namespace mix {
+namespace conduit {
 namespace detail {
 
 template <size_t N, size_t POOL_SIZE = 4096>
@@ -77,7 +77,7 @@ public:
 }
 #endif
 
-namespace mix {
+namespace conduit {
 template <typename T, size_t MAX, bool DEFAULT_CONSTRUCT = false>
 class FixVec
 {
