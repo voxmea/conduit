@@ -552,6 +552,17 @@ public:
                                     callee(unresolvedLookupExpr(hasAnyDeclaration(namedDecl(hasUnderlyingDecl(hasName("sched"))))).bind("callee")))
                                .bind("timing"),
                            &ref);
+        // cycle only sched calls
+        matcher.addMatcher(callExpr(isExpansionInMainFile(),
+                                    hasArgument(1, ignoringParenImpCasts(expr(ci).bind("ref"))),
+                                    callee(functionDecl(hasName("sched")).bind("callee")))
+                               .bind("timing"),
+                           &ref);
+        matcher.addMatcher(callExpr(isExpansionInMainFile(),
+                                    hasArgument(1, ignoringParenImpCasts(expr(ci).bind("ref"))),
+                                    callee(unresolvedLookupExpr(hasAnyDeclaration(namedDecl(hasUnderlyingDecl(hasName("sched"))))).bind("callee")))
+                               .bind("timing"),
+                           &ref);
         // direct calls
         // worked for template:
         // 
