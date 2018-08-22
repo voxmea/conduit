@@ -1,3 +1,6 @@
 [submodule "examples/fmt"]
 	path = examples/fmt
 	url = https://github.com/fmtlib/fmt.git
+[submodule "examples/pybind11"]
+	path = examples/pybind11
+	url = https://github.com/pybind/pybind11.git
