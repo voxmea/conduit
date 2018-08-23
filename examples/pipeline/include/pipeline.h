@@ -13,6 +13,8 @@
 #include <fmt/format.h>
 #include <fmt/ostream.h>
 
+#include <pybind11/pybind11.h>
+
 namespace pe
 {
 
@@ -80,21 +82,8 @@ inline Instr instr_lookup(const std::string &op, const std::string &arg)
     return iter->second(arg);
 }
 
-#if 0
-inline Instr pop_arg(lua_State *L, int index, Instr * = nullptr)
-{
-    auto op = conduit::get_table_field<std::string>(L, index, "op");
-    auto arg = conduit::get_table_field<std::string>(L, index, "arg");
-    return instr_lookup(op, arg);
 }
 
-inline void push_arg(lua_State *L, const Instr &i)
-{
-    lua_newtable(L);
-    conduit::set_table_field(L, "name", i.op);
-}
-#endif
-
-}
+PYBIND11_MAKE_OPAQUE(std::stack<int>);
 
 #endif

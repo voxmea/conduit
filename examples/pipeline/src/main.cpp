@@ -76,7 +76,7 @@ void init()
         set_channel_debug(debug_value);
     });
 
-    // set BOTCH to start Python instead of Lua
+    // set BOTCH to start Python
     conduit::botch::Botch::botch = [&] (auto test, auto line, auto file) {
         fmt::print("BOTCH {}:{} -- \"{}\"\n", file, line, test);
         std::cout.flush();
@@ -93,6 +93,10 @@ void init()
         ::exit(-1);
     };
 
+    std::function<void(uint64_t, pybind11::function)> f = [] (uint64_t delta, pybind11::function f) {
+        ev::sched(delta, std::function<void()>(f));
+    };
+    conduit.def("sched", f);
 }
 
 static std::vector<std::string> search_paths{

@@ -15,13 +15,6 @@
 namespace ev
 {
 
-const int FLUSH = std::numeric_limits<int>::min();
-const int COMMIT = 0;
-const int RESULT = 2;
-const int PICK = 3;
-const int STEP_LIMIT = 4;
-const int POST = 9;
-
 struct Event
 {
     uint64_t cycle;

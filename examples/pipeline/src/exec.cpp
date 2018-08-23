@@ -32,6 +32,21 @@ struct Exec
 SimInit init{[] (Registrar &reg) {
     auto exec = std::make_shared<Exec>(reg);
     reg.lookup<void()>("storage").hook([exec] {});
+
+    pybind11::module m = pybind11::reinterpret_borrow<pybind11::module>(PyImport_AddModule("conduit"));
+    pybind11::class_<Instr>(m, "Instr")
+        .def(pybind11::init<>())
+        .def_readwrite("op", &Instr::op)
+        .def_readwrite("exec", &Instr::exec);
+    pybind11::class_<std::stack<int>>(m, "Set")
+        .def(pybind11::init<>());
+    using Func = conduit::Function<void(std::stack<int> &)>;
+    pybind11::class_<Func>(m, "Function")
+        .def(pybind11::init<>())
+        .def(pybind11::init<Func>())
+        .def("__call__", [] (const Func &f, std::stack<int> &s) {
+            return f(s);
+        });
 }, "exec"};
 
 }
