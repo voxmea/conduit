@@ -38,7 +38,7 @@ SimInit init{[] (Registrar &reg) {
         .def(pybind11::init<>())
         .def_readwrite("op", &Instr::op)
         .def_readwrite("exec", &Instr::exec);
-    pybind11::class_<std::stack<int>>(m, "Set")
+    pybind11::class_<std::stack<int>>(m, "Stack")
         .def(pybind11::init<>());
     using Func = conduit::Function<void(std::stack<int> &)>;
     pybind11::class_<Func>(m, "Function")
