@@ -44,6 +44,7 @@ class Function<R(A...), BUF_SIZE>
 public:
 
     Function() = default;
+    Function(nullptr_t) {}
     Function(const Function &o)
     {
         *this = o;
