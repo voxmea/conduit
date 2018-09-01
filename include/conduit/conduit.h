@@ -895,6 +895,7 @@ struct Registrar
                     reb->call_from_python(source, args);
                 };
                 setattr(obj, "call", call);
+                setattr(obj, "__call__", call);
                 pybind11::cpp_function hook{[&reb] (pybind11::function func, pybind11::str n) {
                     reb->add_python_callback(func, n);
                 }, pybind11::arg("func"), pybind11::arg("name") = "Python"};

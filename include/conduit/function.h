@@ -92,7 +92,8 @@ public:
         destruct = o.destruct;
         clone = o.clone;
 
-        o.clone(this, &o);
+        if (o.clone != nullptr)
+            o.clone(this, &o);
         return *this;
     }
 
