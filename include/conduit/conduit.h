@@ -595,12 +595,6 @@ struct ChannelInterface<R(T...)>
         channel->unhook(client_name);
     }
 
-    ChannelInterface &set_source_name(const std::string &n)
-    {
-        source_id = detail::Names::get_id_for_string(n);
-        return *this;
-    }
-
     size_t num_callbacks() const
     {
         return channel->callbacks->size();
@@ -799,6 +793,7 @@ struct RegistryEntryBase {
     virtual void erase_callback(int) = 0;
     virtual std::vector<std::string> callbacks() const = 0;
     virtual std::string name() const = 0;
+    virtual bool get_debug() = 0;
     virtual void set_debug(bool) = 0;
     virtual void alias(Registrar &) = 0;
 
@@ -829,6 +824,7 @@ struct RegistryEntry<R(T...)> final : RegistryEntryBase
         return ret;
     }
     std::string name() const override {return channel.name;}
+    bool get_debug() override {return channel.debug;}
     void set_debug(bool debug) override {channel.debug = debug;}
     void alias(Registrar &) override;
 
@@ -862,6 +858,15 @@ struct Registrar
     #endif
     lua_State *L;
 
+    #ifndef CONDUIT_NO_PYTHON
+    struct PyChannel
+    {
+        // this is the producer/consumer name
+        std::string name;
+        RegistryEntryBase *reb;
+    };
+    #endif
+
     Registrar(const std::string &n_, lua_State *L_ = nullptr)
         : name(n_), L(L_)
     {
@@ -875,47 +880,45 @@ struct Registrar
             pybind11::dict reg;
             setattr(conduit, "registrars", reg);
         }
+        if (!hasattr(conduit, "PyChannel")) {
+            pybind11::class_<PyChannel>(conduit, "PyChannel")
+                .def_property_readonly("channel_name", [] (PyChannel &pyc) {return pyc.reb->name();})
+                .def_readwrite("name", &PyChannel::name)
+                .def_property("debug", [] (PyChannel &pyc) {return pyc.reb->get_debug();}, [] (PyChannel &pyc, bool debug) {pyc.reb->set_debug(debug);})
+                .def("__call__", [] (PyChannel &pyc, pybind11::args args) {pyc.reb->call_from_python(pyc.name, args);});
+        }
         auto registrars = getattr(conduit, "registrars");
         pybind11::module me(name.c_str(), "conduit");
         registrars[name.c_str()] = me;
         // NOTE: if you get visibility warnings from g++ it's a bug, try adding -fvisibility=hidden
         {
-            std::function<pybind11::object(pybind11::str, pybind11::str)> py_lookup = [this] (pybind11::str n_, pybind11::str source_) {
+            auto pub = [this] (pybind11::str n_, pybind11::str source) {
                 std::string n = n_;
                 if (map.find(n) == map.end()) {
                     throw pybind11::index_error(fmt::format("unable to find \"{}\"\n", n));
                 }
                 auto &reb = map[n];
-                auto obj = pybind11::eval<>("lambda: 0");
-
-                setattr(obj, "name", n_);
-
-                std::string source = source_;
-                pybind11::cpp_function call = [&reb, source] (pybind11::args args) {
-                    reb->call_from_python(source, args);
-                };
-                setattr(obj, "call", call);
-                setattr(obj, "__call__", call);
-                pybind11::cpp_function hook{[&reb] (pybind11::function func, pybind11::str n) {
-                    reb->add_python_callback(func, n);
-                }, pybind11::arg("func"), pybind11::arg("name") = "Python"};
-                setattr(obj, "hook", hook);
-                pybind11::cpp_function debug = [&reb] (bool debug) { reb->set_debug(debug); };
-                setattr(obj, "set_debug", debug);
-                pybind11::cpp_function callbacks = [&reb] () {
-                    return reb->callbacks();
-                };
-                setattr(obj, "callbacks", callbacks);
-                return obj;
+                return PyChannel{static_cast<std::string>(source), reb.get()};
+            };
+            auto sub = [this] (pybind11::str n_, pybind11::function func, pybind11::str target) {
+                std::string n = n_;
+                if (map.find(n) == map.end()) {
+                    throw pybind11::index_error(fmt::format("unable to find \"{}\"\n", n));
+                }
+                auto &reb = map[n];
+                reb->add_python_callback(func, target);
+                return target;
             };
             // moving the cpp_function construction into the setattr call causes
             // g++ 7.X to ICE
-            pybind11::cpp_function f(py_lookup, pybind11::arg("channel name"), pybind11::arg("source") = "Python");
-            setattr(me, "lookup", f);
-            pybind11::cpp_function channels = [this, py_lookup] {
-                std::vector<pybind11::object> ret;
-                visit([&ret, &py_lookup] (auto &reb) {
-                    ret.push_back(py_lookup(reb.name(), std::string("temp")));
+            pybind11::cpp_function py_pub(pub, pybind11::arg("channel name"), pybind11::arg("source") = "Python");
+            setattr(me, "publish", py_pub);
+            pybind11::cpp_function py_sub(sub, pybind11::arg("channel name"), pybind11::arg("callback"), pybind11::arg("source"));
+            setattr(me, "subscribe", py_sub);
+            pybind11::cpp_function channels = [this, pub] {
+                std::vector<PyChannel> ret;
+                visit([&ret, &pub] (auto &reb) {
+                    ret.push_back(pub(reb.name(), std::string("temp")));
                 });
                 return ret;
             };
@@ -1000,10 +1003,10 @@ struct Registrar
     template <typename R, typename ...U> struct FixType<R(U...)> {using type = R(std::decay_t<U>...);};
 
     template <typename T_>
-    ChannelInterface<typename FixType<T_>::type> lookup(const std::string &name, const std::string &source = "")
+    ChannelInterface<typename FixType<T_>::type> publish(const std::string &name, const std::string &source = "")
     {
         using T = typename FixType<T_>::type;
-        static_assert(std::is_function<T_>::value, "lookup must be passed a function type");
+        static_assert(std::is_function<T_>::value, "publish must be passed a function type");
 
         auto ti = std::type_index(typeid(T));
         Channel<T> *channel = nullptr;
@@ -1020,6 +1023,16 @@ struct Registrar
             channel = &reinterpret_cast<RegistryEntry<T> *>(re.get())->channel;
         }
         return ChannelInterface<T>{detail::Names::get_id_for_string(source), channel};
+    }
+
+    template <typename T_, typename U_>
+    std::string subscribe(const std::string &name, U_ &&target, const std::string &target_name = "")
+    {
+        using T = typename FixType<T_>::type;
+        static_assert(std::is_function<T_>::value, "subscribe must be passed a function type");
+        auto ci = publish<T>(name);
+        ci.channel->hook(std::forward<U_>(target), target_name);
+        return target_name;
     }
 
     // NOTE! this operation is not transitive. To alias multiple channels you
@@ -1080,7 +1093,7 @@ template <typename R, typename ...T>
 inline void RegistryEntry<R(T...)>::alias(Registrar &reg)
 {
     // this ensures the ore exists and agrees on types
-    reg.lookup<R(T...)>(channel.name);
+    reg.publish<R(T...)>(channel.name);
     BOTCH(reg.map.find(channel.name) == reg.map.end(), "wha?");
     auto &up = reg.map[channel.name];
     auto &ore = *reinterpret_cast<RegistryEntry<R(T...)> *>(up.get());
