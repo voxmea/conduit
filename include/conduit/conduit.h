@@ -4,9 +4,6 @@
 
 #include "botch.h"
 
-#ifndef CONDUIT_NO_LUA
-#include "lua-wrapper.h"
-#endif
 #ifndef CONDUIT_NO_PYTHON
 #ifdef _DEBUG
 #undef _DEBUG
@@ -172,27 +169,6 @@ namespace detail
 
 namespace detail
 {
-    #ifndef CONDUIT_NO_LUA
-    using conduit::pop_arg;
-    template <typename U, typename... V>
-    struct CanConvert {
-        template <typename W>
-        static char test(decltype(pop_arg(nullptr, 0, (W *)nullptr)) *);
-        template <typename W>
-        static char *test(...);
-        static const bool value = (sizeof(test<U>(nullptr)) == sizeof(char)) && CanConvert<V...>::value;
-    };
-
-    template <typename U>
-    struct CanConvert<U> {
-        template <typename W>
-        static char test(decltype(pop_arg(nullptr, 0, (W *)nullptr)) *);
-        template <typename W>
-        static char *test(...);
-        static const bool value = (sizeof(test<U>(nullptr)) == sizeof(char));
-    };
-    #endif
-
     struct ExactReturnTypeTag {};
     struct ConvertibleReturnTypeTag {};
     struct OptionalNullTypeTag {};
@@ -466,65 +442,6 @@ private:
         }
     }
 
-    #ifndef CONDUIT_NO_LUA
-    template <std::size_t ...I>
-    void call_from_lua_(std::index_sequence<I...>, const std::tuple<T...> &args)
-    {
-        print_debug("Lua", std::get<I>(args)...);
-        this->operator()(std::get<I>(args)...);
-    }
-
-    template <int Index>
-    struct GetArg
-    {
-        static typename std::tuple_element<Index, std::tuple<T...>>::type get_arg(lua_State *L)
-        {
-            using conduit::pop_arg;
-            return pop_arg(L, Index + 1, (typename std::tuple_element<Index, std::tuple<T...>>::type *)nullptr);
-        }
-    };
-
-    template <typename... U, std::size_t ...I>
-    typename std::enable_if<detail::CanConvert<U...>::value, bool>::type
-    call_from_lua_has_args(lua_State *L, std::index_sequence<I...>)
-    {
-        if (lua_gettop(L) < static_cast<int>(sizeof...(T))) {
-            luaL_error(L, "invalid number of arguments");
-            return false;
-        }
-        std::tuple<T...> args{GetArg<I>::get_arg(L)...};
-        call_from_lua_(std::index_sequence_for<T...>{}, args);
-        return true;
-    }
-
-    template <typename ...U, std::size_t ...I>
-    typename std::enable_if<!detail::CanConvert<U...>::value, bool>::type call_from_lua_has_args(lua_State *L, std::index_sequence<I...>)
-    {
-        using conduit::push_arg;
-        lua_settop(L, 0);
-        push_arg(L, "Tried to use channel, but there doesn't exist a valid argument conversion");
-        return false;
-    }
-
-    // Registrar calls a channel from Lua using this interface
-    // TODO: add return values back to Lua
-    template <bool ha = has_arguments>
-    typename std::enable_if<ha, bool>::type call_from_lua(lua_State *L)
-    {
-        const bool success = call_from_lua_has_args<T...>(L, std::index_sequence_for<T...>{});
-        if (success)
-            lua_pop(L, (int)sizeof...(T));
-        return success;
-    }
-
-    template <bool ha = has_arguments>
-    typename std::enable_if<!ha, bool>::type call_from_lua(lua_State *L)
-    {
-        this->operator()();
-        return true;
-    }
-    #endif
-
     #ifndef CONDUIT_NO_PYTHON
     template <std::size_t ...I>
     void call_from_python_args(const std::string &source, pybind11::args args, std::index_sequence<I...>)
@@ -769,21 +686,6 @@ std::shared_ptr<Optuple> merge(C &&c, ChannelInterface<T> ...cis)
 
 // Registry
 
-#ifndef CONDUIT_NO_LUA
-template <typename R_, typename... T>
-struct LuaChannelBridge
-{
-    using R = typename std::conditional<detail::CanConvert<R_>::value, R_, void>::type;
-    std::shared_ptr<conduit::FunctionWrapper> wrapper;
-    LuaChannelBridge(lua_State *L) : wrapper(std::make_shared<conduit::FunctionWrapper>(L)) {}
-    R operator()(const T &... t)
-    {
-        if (wrapper->ref != -1) return wrapper->call<R>(t...);
-        return R();
-    }
-};
-#endif
-
 struct RegistryEntryBase {
     std::type_index ti = std::type_index(typeid(void));
     RegistryEntryBase() = default;
@@ -797,10 +699,6 @@ struct RegistryEntryBase {
     virtual void set_debug(bool) = 0;
     virtual void alias(Registrar &) = 0;
 
-    #ifndef CONDUIT_NO_LUA
-    virtual void add_lua_callback(lua_State *, const std::string &, int = 0) = 0;
-    virtual bool call_from_lua(lua_State *) = 0;
-    #endif
     #ifndef CONDUIT_NO_PYTHON
     virtual void add_python_callback(pybind11::function, const std::string &, int = 0) = 0;
     virtual void call_from_python(const std::string &, pybind11::args) = 0;
@@ -828,16 +726,6 @@ struct RegistryEntry<R(T...)> final : RegistryEntryBase
     void set_debug(bool debug) override {channel.debug = debug;}
     void alias(Registrar &) override;
 
-    #ifndef CONDUIT_NO_LUA
-    void add_lua_callback(lua_State *L, const std::string &client, int group) override
-    {
-        auto l = LuaChannelBridge<R,T...>(L);
-        if (l.wrapper->ref != -1) {
-            channel.hook(l, client, group);
-        }
-    }
-    bool call_from_lua(lua_State *L) override { return channel.call_from_lua(L); }
-    #endif
     #ifndef CONDUIT_NO_PYTHON
     void add_python_callback(pybind11::function func, const std::string &n, int group) override
     {
@@ -853,10 +741,6 @@ struct Registrar
 {
     std::string name;
     std::unordered_map<std::string, std::unique_ptr<RegistryEntryBase>> map;
-    #ifdef CONDUIT_NO_LUA
-    using lua_State = void;
-    #endif
-    lua_State *L;
 
     #ifndef CONDUIT_NO_PYTHON
     struct PyChannel
@@ -867,7 +751,7 @@ struct Registrar
     };
     #endif
 
-    Registrar(const std::string &n_, lua_State *L_ = nullptr)
+    Registrar(const std::string &n_)
         : name(n_), L(L_)
     {
         #ifndef CONDUIT_NO_PYTHON
@@ -925,69 +809,6 @@ struct Registrar
             setattr(me, "channels", channels);
             setattr(me, "ptr", pybind11::capsule(this, "ptr"));
             setattr(me, "name", pybind11::str(this->name));
-        }
-        #endif
-
-        #ifndef CONDUIT_NO_LUA
-        using conduit::push_arg;
-        if (L) {
-            conduit::add_function(L, "conduit.registrars." + name + ".hook", [&]() {
-                const int top = lua_gettop(L);
-                if (top < 3 || top > 4) {
-                    luaL_error(L, "wrong arguments to hook, should be channel name, function, and name of client, and optional group");
-                    return;
-                }
-                std::string channel_name = conduit::pop_arg(L, 1, (std::string *)nullptr);
-                std::string client_name = conduit::pop_arg(L, 3, (std::string *)nullptr);
-                int group = 0;
-                if (top == 4) {
-                    group = conduit::pop_arg(L, 4, (int *)nullptr);
-                }
-                lua_pushvalue(L, 2);
-                lua_replace(L, 1);
-                lua_settop(L, 1);
-                add_lua_callback(channel_name, client_name, group);
-                lua_pop(L, 1);
-            });
-            conduit::add_function(L, "conduit.registrars." + name + ".erase", [&](std::string channel_name, int index) {
-                // Lua is 1 based, so calling cl__channel_clients prints a
-                // 1-based array. We expect users to use that same index to
-                // erase, so we subtract here to restore sanity.
-                erase_lua_callback(channel_name, index - 1);
-            });
-            conduit::add_function(L, "conduit.registrars." + name + ".channels", [=]() {
-                lua_newtable(L);
-                int i = 1;
-                for (auto &p : map) {
-                    push_arg(L, p.first);
-                    lua_rawseti(L, -2, i++);
-                }
-            });
-            conduit::add_function(L, "conduit.registrars." + name + ".set_debug", [=](const std::string &channel_name, bool debug) {
-                if (!map[channel_name]) {
-                    lua_pushnil(L);
-                    return;
-                }
-                map[channel_name]->set_debug(debug);
-            });
-            conduit::add_function(L, "conduit.registrars." + name + ".call", [=]() {
-                const int top = lua_gettop(L);
-                if (top == 0) {
-                    luaL_error(L, "must provide the channel name");
-                    return;
-                }
-                std::string c_name = conduit::pop_arg(L, 1, (std::string *)nullptr);
-                // remove the channel name
-                lua_remove(L, 1);
-                if (!map[c_name]) {
-                    luaL_error(L, (std::string("unable to find channel \"") + c_name + "\"").c_str());
-                    return;
-                }
-                if (map[c_name]->call_from_lua(L) == false) {
-                    std::string err = conduit::pop_arg(L, -1, (std::string *)nullptr);
-                    luaL_error(L, (std::string("error calling channel ") + c_name + ":\n\t" + err).c_str());
-                }
-            });
         }
         #endif
     }
@@ -1057,36 +878,6 @@ struct Registrar
             c(*p.second);
         }
     }
-    
-    #ifndef CONDUIT_NO_LUA
-    void add_lua_callback(const std::string &channel_name, const std::string &client_name, int group = 0)
-    {
-        if (!L)
-            return;
-        if (!map[channel_name]) {
-            std::ostringstream stream;
-            stream << "unknown channel " << channel_name;
-            luaL_error(L, stream.str().c_str());
-            return;
-        }
-        auto &c = map[channel_name];
-        c->add_lua_callback(L, client_name, group);
-    }
-
-    void erase_lua_callback(const std::string &channel_name, int index)
-    {
-        if (!L)
-            return;
-        if (!map[channel_name]) {
-            std::ostringstream stream;
-            stream << "unknown channel " << channel_name;
-            luaL_error(L, stream.str().c_str());
-            return;
-        }
-        auto &c = map[channel_name];
-        c->erase_callback(index);
-    }
-    #endif
 };
 
 template <typename R, typename ...T>
