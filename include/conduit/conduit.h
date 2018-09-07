@@ -776,61 +776,46 @@ struct Registrar
             pybind11::dict reg;
             setattr(conduit, "registrars", reg);
         }
-        if (!hasattr(conduit, "PyChannel")) {
-            pybind11::class_<PyChannel>(conduit, "PyChannel")
+        if (!hasattr(conduit, "Channel")) {
+            pybind11::class_<PyChannel>(conduit, "Channel")
                 .def_property_readonly("channel_name", [] (PyChannel &pyc) {return pyc.reb->name();})
                 .def_readwrite("name", &PyChannel::name)
                 .def_property("debug", [] (PyChannel &pyc) {return pyc.reb->get_debug();}, [] (PyChannel &pyc, bool debug) {pyc.reb->set_debug(debug);})
                 .def("__call__", [] (PyChannel &pyc, pybind11::args args) {pyc.reb->call_from_python(pyc.name, args);});
         }
-        auto registrars = getattr(conduit, "registrars");
-        pybind11::module me(name.c_str(), "conduit");
-        registrars[name.c_str()] = me;
-        // NOTE: if you get visibility warnings from g++ it's a bug, try adding -fvisibility=hidden
-        {
-            auto pub = [this] (pybind11::str n_, pybind11::str source) {
+        if (!hasattr(conduit, "Registrar")) {
+            auto pub = [] (Registrar &reg, pybind11::str n_, pybind11::str source) {
                 std::string n = n_;
-                if (map.find(n) == map.end()) {
+                if (reg.map.find(n) == reg.map.end()) {
                     throw pybind11::index_error(fmt::format("unable to find \"{}\"\n", n));
                 }
-                auto &reb = map[n];
-                trace(reb.get(), source, n);
+                auto &reb = reg.map[n];
+                reg.trace(reb.get(), source, n);
                 return PyChannel{static_cast<std::string>(source), reb.get()};
             };
-            auto sub = [this] (pybind11::str n_, pybind11::function func, pybind11::str target) {
+            auto sub = [] (Registrar &reg, pybind11::str n_, pybind11::function func, pybind11::str target) {
                 std::string n = n_;
-                if (map.find(n) == map.end()) {
+                if (reg.map.find(n) == reg.map.end()) {
                     throw pybind11::index_error(fmt::format("unable to find \"{}\"\n", n));
                 }
-                auto &reb = map[n];
+                auto &reb = reg.map[n];
                 reb->add_python_callback(func, target);
-                trace(reb.get(), n, target);
+                reg.trace(reb.get(), n, target);
                 return target;
             };
-            // moving the cpp_function construction into the setattr call causes
-            // g++ 7.X to ICE
-            pybind11::cpp_function py_pub(pub, pybind11::arg("channel name"), pybind11::arg("source") = "Python");
-            setattr(me, "publish", py_pub);
-            pybind11::cpp_function py_sub(sub, pybind11::arg("channel name"), pybind11::arg("callback"), pybind11::arg("source"));
-            setattr(me, "subscribe", py_sub);
-            pybind11::cpp_function channels = [this, pub] {
+            auto channels = [] (Registrar &reg) {
                 std::vector<PyChannel> ret;
-                visit([&ret, &pub] (auto &reb) {
-                    ret.push_back(pub(reb.name(), std::string("temp")));
+                reg.visit([&ret] (auto &reb) {
+                    ret.push_back(PyChannel{"temp", &reb});
                 });
                 return ret;
             };
-            setattr(me, "channels", channels);
-            setattr(me, "ptr", pybind11::capsule(this, "ptr"));
-            setattr(me, "name", pybind11::str(this->name));
+            pybind11::class_<Registrar, std::shared_ptr<Registrar>>(conduit, "Registrar")
+                .def("publish", pub)
+                .def("subscribe", sub)
+                .def("channels", channels)
+                .def_readonly("name", &Registrar::name);
         }
-        #endif
-    }
-
-    ~Registrar()
-    {
-        #ifndef CONDUIT_NO_PYTHON
-        pybind11::eval<>(fmt::format("conduit.registrars.pop('{}', None)\n", name));
         #endif
     }
 
