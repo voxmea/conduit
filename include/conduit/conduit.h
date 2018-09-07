@@ -272,6 +272,9 @@ struct Channel<R(T...)> final : public ChannelBase
         return ret;
     }
 
+    Registrar &registrar;
+
+private:
     template <typename C>
     std::string hook(C &&c, std::string client_name, int group = 0)
     {
@@ -338,7 +341,6 @@ struct Channel<R(T...)> final : public ChannelBase
         }
     }
 
-private:
     // Callback definition
     using OperatorReturn = typename std::conditional<std::is_same<R, void>::value, void, std::vector<conduit::Optional<R>>>::type;
     using CallbackReturn = typename std::conditional<std::is_same<R, void>::value, void, conduit::Optional<R>>::type;
@@ -360,9 +362,8 @@ private:
 
     // data
     std::string name;
-    Registrar *registrar = nullptr;
     mutable bool debug = false;
-    
+
     bool in_callbacks = false;
     std::shared_ptr<std::vector<Callback>> callbacks = std::make_shared<std::vector<Callback>>();
     std::vector<size_t> pending_unhook;
@@ -372,7 +373,7 @@ private:
     std::vector<size_t> pending_unresolve;
 
     // Only Registrars can create channels.
-    Channel() {}
+    Channel(Registrar &reg) : registrar(reg) {}
     friend struct Registrar;
     friend struct RegistryEntry<R(T...)>;
     friend struct ChannelInterface<R(T...)>;
@@ -492,7 +493,7 @@ struct ChannelInterface<R(T...)>
     {
         auto &c = *channel;
         if (c.debug) {
-            CONDUIT_LOGGER << detail::Names::get_string_for_id(source_id) << " -> " << c.registrar->name << "." << channel->name << "(";
+            CONDUIT_LOGGER << detail::Names::get_string_for_id(source_id) << " -> " << c.registrar.name << "." << channel->name << "(";
             detail::call_print_arg(CONDUIT_LOGGER, t...);
             CONDUIT_LOGGER << ")\n";
         }
@@ -710,7 +711,10 @@ struct RegistryEntry<R(T...)> final : RegistryEntryBase
 {
     // can't use make_shared because of private constructor...
     Channel<R(T...)> channel;
+
+    RegistryEntry(Registrar &reg) : channel{reg} {}
     ~RegistryEntry() override {}
+
     std::string to_string() const override { return demangle(typeid(R(T...)).name()); }
     void erase_callback(int index) override { channel.erase(index); }
     std::vector<std::string> callbacks() const override
@@ -741,6 +745,14 @@ struct Registrar
 {
     std::string name;
     std::unordered_map<std::string, std::unique_ptr<RegistryEntryBase>> map;
+    std::vector<conduit::Function<void(std::string source, std::string dest, std::type_index)>> tracers;
+
+    void trace(RegistryEntryBase *reb, const std::string &source, const std::string &dest)
+    {
+        std::for_each(tracers.begin(), tracers.end(), [reb, &source, &dest] (const auto &f) {
+            f(source, dest, reb->ti);
+        });
+    }
 
     #ifndef CONDUIT_NO_PYTHON
     struct PyChannel
@@ -752,7 +764,7 @@ struct Registrar
     #endif
 
     Registrar(const std::string &n_)
-        : name(n_), L(L_)
+        : name(n_)
     {
         #ifndef CONDUIT_NO_PYTHON
         pybind11::module m = pybind11::module::import("__main__");
@@ -782,6 +794,7 @@ struct Registrar
                     throw pybind11::index_error(fmt::format("unable to find \"{}\"\n", n));
                 }
                 auto &reb = map[n];
+                trace(reb.get(), source, n);
                 return PyChannel{static_cast<std::string>(source), reb.get()};
             };
             auto sub = [this] (pybind11::str n_, pybind11::function func, pybind11::str target) {
@@ -791,6 +804,7 @@ struct Registrar
                 }
                 auto &reb = map[n];
                 reb->add_python_callback(func, target);
+                trace(reb.get(), n, target);
                 return target;
             };
             // moving the cpp_function construction into the setattr call causes
@@ -832,10 +846,9 @@ struct Registrar
         auto ti = std::type_index(typeid(T));
         Channel<T> *channel = nullptr;
         if (!map[name]) {
-            auto re = std::make_unique<RegistryEntry<T>>();
+            auto re = std::make_unique<RegistryEntry<T>>(*this);
             re->ti = ti;
             re->channel.name = name;
-            re->channel.registrar = this;
             channel = &re->channel;
             map[name] = std::move(re);
         } else {
@@ -843,6 +856,7 @@ struct Registrar
             BOTCH(ti != re->ti, "ERROR: type mismatch for {} (registered {}, requested {})", name, re->to_string(), demangle(typeid(T).name()));
             channel = &reinterpret_cast<RegistryEntry<T> *>(re.get())->channel;
         }
+        trace(map[name].get(), source, name);
         return ChannelInterface<T>{detail::Names::get_id_for_string(source), channel};
     }
 
@@ -853,6 +867,15 @@ struct Registrar
         static_assert(std::is_function<T_>::value, "subscribe must be passed a function type");
         auto ci = publish<T>(name);
         ci.channel->hook(std::forward<U_>(target), target_name);
+        trace(map[name].get(), name, target_name);
+        return target_name;
+    }
+
+    template <typename T_, typename U_>
+    std::string subscribe(ChannelInterface<T_> ci, U_ &&target, const std::string &target_name = "")
+    {
+        ci.channel->hook(target, target_name);
+        trace(map[ci.name()].get(), ci.name(), target_name);
         return target_name;
     }
 
@@ -898,7 +921,7 @@ inline void RegistryEntry<R(T...)>::alias(Registrar &reg)
 template <typename R, typename... T>
 void Channel<R(T...)>::print_debug_impl(const std::string &source, const T &... t)
 {
-    CONDUIT_LOGGER << source << " -> " << registrar->name << "." << name << "(";
+    CONDUIT_LOGGER << source << " -> " << registrar.name << "." << name << "(";
     detail::call_print_arg(CONDUIT_LOGGER, t...);
     CONDUIT_LOGGER << ")\n";
 }
