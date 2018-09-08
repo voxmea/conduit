@@ -778,8 +778,8 @@ struct Registrar
         }
         if (!hasattr(conduit, "Channel")) {
             pybind11::class_<PyChannel>(conduit, "Channel")
-                .def_property_readonly("channel_name", [] (PyChannel &pyc) {return pyc.reb->name();})
-                .def_readwrite("name", &PyChannel::name)
+                .def_property_readonly("name", [] (PyChannel &pyc) {return pyc.reb->name();})
+                .def_readwrite("extra_name", &PyChannel::name)
                 .def_property("debug", [] (PyChannel &pyc) {return pyc.reb->get_debug();}, [] (PyChannel &pyc, bool debug) {pyc.reb->set_debug(debug);})
                 .def("__call__", [] (PyChannel &pyc, pybind11::args args) {pyc.reb->call_from_python(pyc.name, args);});
         }
