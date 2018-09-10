@@ -745,9 +745,18 @@ struct Registrar
 {
     std::string name;
     std::unordered_map<std::string, std::unique_ptr<RegistryEntryBase>> map;
-    std::vector<conduit::Function<void(std::string source, std::string dest, std::type_index)>> tracers;
 
-    void trace(RegistryEntryBase *reb, const std::string &source, const std::string &dest)
+    struct TraceNode
+    {
+        enum Kind {
+            CHANNEL,
+            ENTITY
+        } kind;
+        std::string name;
+    };
+    std::vector<conduit::Function<void(TraceNode source, TraceNode dest, std::type_index)>> tracers;
+
+    void trace(RegistryEntryBase *reb, TraceNode source, TraceNode dest)
     {
         std::for_each(tracers.begin(), tracers.end(), [reb, &source, &dest] (const auto &f) {
             f(source, dest, reb->ti);
@@ -783,6 +792,15 @@ struct Registrar
                 .def_property("debug", [] (PyChannel &pyc) {return pyc.reb->get_debug();}, [] (PyChannel &pyc, bool debug) {pyc.reb->set_debug(debug);})
                 .def("__call__", [] (PyChannel &pyc, pybind11::args args) {pyc.reb->call_from_python(pyc.name, args);});
         }
+        if (!hasattr(conduit, "TraceNode")) {
+            auto tn = pybind11::class_<TraceNode>(conduit, "TraceNode")
+                .def_readwrite("kind", &TraceNode::kind)
+                .def_readwrite("name", &TraceNode::name);
+            pybind11::enum_<TraceNode::Kind>(tn, "Kind")
+                .value("CHANNEL", TraceNode::CHANNEL)
+                .value("ENTITY", TraceNode::ENTITY)
+                .export_values();
+        }
         if (!hasattr(conduit, "Registrar")) {
             auto pub = [] (Registrar &reg, pybind11::str n_, pybind11::str source) {
                 std::string n = n_;
@@ -790,7 +808,7 @@ struct Registrar
                     throw pybind11::index_error(fmt::format("unable to find \"{}\"\n", n));
                 }
                 auto &reb = reg.map[n];
-                reg.trace(reb.get(), source, n);
+                reg.trace(reb.get(), TraceNode{TraceNode::ENTITY, source}, TraceNode{TraceNode::CHANNEL, n});
                 return PyChannel{static_cast<std::string>(source), reb.get()};
             };
             auto sub = [] (Registrar &reg, pybind11::str n_, pybind11::function func, pybind11::str target) {
@@ -800,7 +818,7 @@ struct Registrar
                 }
                 auto &reb = reg.map[n];
                 reb->add_python_callback(func, target);
-                reg.trace(reb.get(), n, target);
+                reg.trace(reb.get(), TraceNode{TraceNode::CHANNEL, n}, TraceNode{TraceNode::ENTITY, target});
                 return target;
             };
             auto channels = [] (Registrar &reg) {
@@ -814,6 +832,11 @@ struct Registrar
                 .def("publish", pub)
                 .def("subscribe", sub)
                 .def("channels", channels)
+                .def("trace", [] (Registrar &reg, pybind11::function func) {
+                    reg.tracers.push_back([func] (TraceNode source, TraceNode dest, std::type_index index) {
+                        func(source, dest, index.name());
+                    });
+                })
                 .def_readonly("name", &Registrar::name);
         }
         #endif
@@ -841,7 +864,7 @@ struct Registrar
             BOTCH(ti != re->ti, "ERROR: type mismatch for {} (registered {}, requested {})", name, re->to_string(), demangle(typeid(T).name()));
             channel = &reinterpret_cast<RegistryEntry<T> *>(re.get())->channel;
         }
-        trace(map[name].get(), source, name);
+        trace(map[name].get(), TraceNode{TraceNode::ENTITY, source}, TraceNode{TraceNode::CHANNEL, name});
         return ChannelInterface<T>{detail::Names::get_id_for_string(source), channel};
     }
 
@@ -852,7 +875,7 @@ struct Registrar
         static_assert(std::is_function<T_>::value, "subscribe must be passed a function type");
         auto ci = publish<T>(name);
         ci.channel->hook(std::forward<U_>(target), target_name);
-        trace(map[name].get(), name, target_name);
+        trace(map[name].get(), TraceNode{TraceNode::CHANNEL, name}, TraceNode{TraceNode::ENTITY, target_name});
         return target_name;
     }
 
@@ -860,7 +883,7 @@ struct Registrar
     std::string subscribe(ChannelInterface<T_> ci, U_ &&target, const std::string &target_name = "")
     {
         ci.channel->hook(target, target_name);
-        trace(map[ci.name()].get(), ci.name(), target_name);
+        trace(map[ci.name()].get(), TraceNode{TraceNode::CHANNEL, ci.name()}, TraceNode{TraceNode::ENTITY, target_name});
         return target_name;
     }
 
