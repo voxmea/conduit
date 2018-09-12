@@ -790,6 +790,9 @@ struct Registrar
                 .def_property_readonly("name", [] (PyChannel &pyc) {return pyc.reb->name();})
                 .def_readwrite("extra_name", &PyChannel::name)
                 .def_property("debug", [] (PyChannel &pyc) {return pyc.reb->get_debug();}, [] (PyChannel &pyc, bool debug) {pyc.reb->set_debug(debug);})
+                .def("consumers", [] (PyChannel &pyc) {
+                    return pyc.reb->callbacks();
+                })
                 .def("__call__", [] (PyChannel &pyc, pybind11::args args) {pyc.reb->call_from_python(pyc.name, args);});
         }
         if (!hasattr(conduit, "TraceNode")) {
