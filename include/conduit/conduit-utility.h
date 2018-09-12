@@ -94,7 +94,7 @@ inline std::string demangle(const char *name)
     int status = 0;
     auto s = abi::__cxa_demangle(name, nullptr, 0, &status);
     if (status != 0) {
-        return "";
+        return name;
     }
     std::string ret{s};
     ::free(s);
