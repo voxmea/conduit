@@ -811,7 +811,7 @@ struct Registrar
                     throw pybind11::index_error(fmt::format("unable to find \"{}\"\n", n));
                 }
                 auto &reb = reg.map[n];
-                reg.trace(reb.get(), TraceNode{TraceNode::ENTITY, source}, TraceNode{TraceNode::CHANNEL, n});
+                reg.trace(reb.get(), TraceNode{TraceNode::ENTITY, static_cast<std::string>(source)}, TraceNode{TraceNode::CHANNEL, n});
                 return PyChannel{static_cast<std::string>(source), reb.get()};
             };
             auto sub = [] (Registrar &reg, pybind11::str n_, pybind11::function func, pybind11::str target) {
@@ -848,25 +848,31 @@ struct Registrar
     template <typename ...U> struct FixType;
     template <typename R, typename ...U> struct FixType<R(U...)> {using type = R(std::decay_t<U>...);};
 
-    template <typename T_>
-    ChannelInterface<typename FixType<T_>::type> publish(const std::string &name, const std::string &source = "")
+    template <typename T>
+    RegistryEntry<T> &find(const std::string &name)
     {
-        using T = typename FixType<T_>::type;
-        static_assert(std::is_function<T_>::value, "publish must be passed a function type");
-
         auto ti = std::type_index(typeid(T));
         Channel<T> *channel = nullptr;
         if (!map[name]) {
             auto re = std::make_unique<RegistryEntry<T>>(*this);
             re->ti = ti;
             re->channel.name = name;
-            channel = &re->channel;
             map[name] = std::move(re);
         } else {
             auto &re = map[name];
             BOTCH(ti != re->ti, "ERROR: type mismatch for {} (registered {}, requested {})", name, re->to_string(), demangle(typeid(T).name()));
-            channel = &reinterpret_cast<RegistryEntry<T> *>(re.get())->channel;
         }
+        return static_cast<RegistryEntry<T> &>(*map[name]);
+    }
+
+    template <typename T_>
+    ChannelInterface<typename FixType<T_>::type> publish(const std::string &name, const std::string &source = "")
+    {
+        using T = typename FixType<T_>::type;
+        static_assert(std::is_function<T_>::value, "publish must be passed a function type");
+        auto &re = find<T>(name);
+        auto *channel = &re.channel;
+
         trace(map[name].get(), TraceNode{TraceNode::ENTITY, source}, TraceNode{TraceNode::CHANNEL, name});
         return ChannelInterface<T>{detail::Names::get_id_for_string(source), channel};
     }
@@ -876,8 +882,8 @@ struct Registrar
     {
         using T = typename FixType<T_>::type;
         static_assert(std::is_function<T_>::value, "subscribe must be passed a function type");
-        auto ci = publish<T>(name);
-        ci.channel->hook(std::forward<U_>(target), target_name);
+        auto &re = find<T>(name);
+        re.channel.hook(std::forward<U_>(target), target_name);
         trace(map[name].get(), TraceNode{TraceNode::CHANNEL, name}, TraceNode{TraceNode::ENTITY, target_name});
         return target_name;
     }
