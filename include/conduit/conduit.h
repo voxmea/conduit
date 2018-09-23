@@ -502,17 +502,6 @@ struct ChannelInterface<R(T...)>
         return c(t...);
     }
 
-    template <typename C>
-    std::string hook(C &&c, const std::string name = "", int group = 0) const
-    {
-        return channel->hook(std::forward<C>(c), name, group);
-    }
-
-    void unhook(std::string client_name)
-    {
-        channel->unhook(client_name);
-    }
-
     size_t num_callbacks() const
     {
         return channel->callbacks->size();
@@ -561,6 +550,7 @@ struct OptupleImpl : Optuple
     Data data;
     Callback callback;
     conduit::Function<void()> response;
+    std::string entity_name;
 
     template <typename ...T> struct IndexForTuple;
     template <typename ...T> struct IndexForTuple<detail::Tuple<T...>> { using type = std::index_sequence_for<T...>; };
@@ -607,7 +597,7 @@ struct OptupleImpl : Optuple
     template <int index, int data_index, uint64_t mask, typename R, typename ...T, size_t ...I>
     int hook(ChannelInterface<R(T...)> ci, std::index_sequence<I...>)
     {
-        ci.hook([this] (T ...t) {
+        ci.channel->registrar.template subscribe<R(T...)>(ci.name(), [this] (T ...t) {
             (void) (std::initializer_list<int>{
                 destroy<data_index + I>()...
             });
@@ -618,19 +608,19 @@ struct OptupleImpl : Optuple
             if (state.val == mask) {
                 fire(typename IndexForTuple<Data>::type());
             }
-        }, "optuple");
+        }, entity_name);
         return index;
     }
 
     template <int index, int data_index, uint64_t mask, typename R, size_t ...I>
     int hook(ChannelInterface<R()> ci, std::index_sequence<I...>)
     {
-        ci.hook([this] {
+        ci.channel->registrar.template subscribe<R()>(ci.name(), [this] {
             state.val |= (1ULL << index);
             if (state.val == mask) {
                 fire(typename IndexForTuple<Data>::type());
             }
-        }, "optuple");
+        }, entity_name);
         return index;
     }
 
@@ -658,7 +648,7 @@ struct OptupleImpl : Optuple
     }
 
     template <typename ...T>
-    OptupleImpl(Callback c, ChannelInterface<T> ...cis) : callback(c)
+    OptupleImpl(Callback c, std::string entity, ChannelInterface<T> ...cis) : callback(c), entity_name(entity)
     {
         init(typename std::make_index_sequence<sizeof...(cis)>(), cis...);
     }
@@ -668,13 +658,13 @@ template <typename ...T> struct TupleConvert;
 template <typename ...T> struct TupleConvert<std::tuple<T...>> { using type = detail::Tuple<T...>; };
 
 template <typename C, typename ...T>
-std::shared_ptr<Optuple> merge(C &&c, Function<void()> response, ChannelInterface<T> ...cis)
+std::shared_ptr<Optuple> merge(C &&c, std::string entity, Function<void()> response, ChannelInterface<T> ...cis)
 {
     static_assert(sizeof...(cis) <= 64, "optuple supports a maximum of 64 channels");
     using TupleCatType = typename TupleCat<typename CallableInfo<ChannelInterface<T>>::tuple_parameter_type...>::type;
     using Data = typename TupleConvert<TupleCatType>::type;
     using Callback = std::decay_t<C>;
-    auto optuple = std::make_shared<OptupleImpl<Callback, Data>>(c, cis...);
+    auto optuple = std::make_shared<OptupleImpl<Callback, Data>>(c, entity, cis...);
     optuple->response = std::move(response);
     return optuple;
 }
@@ -682,7 +672,13 @@ std::shared_ptr<Optuple> merge(C &&c, Function<void()> response, ChannelInterfac
 template <typename C, typename ...T>
 std::shared_ptr<Optuple> merge(C &&c, ChannelInterface<T> ...cis)
 {
-    return merge(c, Function<void()>{}, cis...);
+    return merge(c, "merge", Function<void()>{}, cis...);
+}
+
+template <typename C, typename ...T>
+std::shared_ptr<Optuple> merge(C &&c, std::string entity, ChannelInterface<T> ...cis)
+{
+    return merge(c, entity, Function<void()>{}, cis...);
 }
 
 // Registry
@@ -939,6 +935,14 @@ struct ClientRegistrar
         return reg.publish<typename Registrar::FixType<T_>::type>(name, entity);
     }
 
+    // access ChannelInterface without tracing (e.g. for merge)
+    template <typename T_>
+    ChannelInterface<typename Registrar::FixType<T_>::type> find(const std::string &name) const
+    {
+        using T = typename Registrar::FixType<T_>::type;
+        return ChannelInterface<T>{detail::Names::get_id_for_string(entity), &reg.find<T>(name).channel};
+    }
+
     template <typename T_, typename U_>
     std::string subscribe(const std::string &name, U_ &&target) const
     {
@@ -950,6 +954,7 @@ struct ClientRegistrar
     {
         return reg.subscribe<T_>(ci, std::forward<U_>(target), entity);
     }
+
 };
 
 template <typename R, typename ...T>
