@@ -845,6 +845,13 @@ struct Registrar
         #endif
     }
 
+    ~Registrar()
+    {
+        #if 0
+        fmt::print("destoying {}\n", name);
+        #endif
+    }
+
     template <typename ...U> struct FixType;
     template <typename R, typename ...U> struct FixType<R(U...)> {using type = R(std::decay_t<U>...);};
 
@@ -917,6 +924,31 @@ struct Registrar
         for (auto &p : map) {
             c(*p.second);
         }
+    }
+};
+
+// Wraps a Registrar with pub/sub API that automatically adds entity names
+struct ClientRegistrar
+{
+    Registrar &reg;
+    std::string entity;
+
+    template <typename T_>
+    ChannelInterface<typename Registrar::FixType<T_>::type> publish(const std::string &name)
+    {
+        return reg.publish<typename Registrar::FixType<T_>::type>(name, entity);
+    }
+
+    template <typename T_, typename U_>
+    std::string subscribe(const std::string &name, U_ &&target)
+    {
+        return reg.subscribe<T_>(name, std::forward<U_>(target), entity);
+    }
+
+    template <typename T_, typename U_>
+    std::string subscribe(ChannelInterface<T_> ci, U_ &&target)
+    {
+        return reg.subscribe<T_>(ci, std::forward<U_>(target), entity);
     }
 };
 
