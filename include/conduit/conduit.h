@@ -934,19 +934,19 @@ struct ClientRegistrar
     std::string entity;
 
     template <typename T_>
-    ChannelInterface<typename Registrar::FixType<T_>::type> publish(const std::string &name)
+    ChannelInterface<typename Registrar::FixType<T_>::type> publish(const std::string &name) const
     {
         return reg.publish<typename Registrar::FixType<T_>::type>(name, entity);
     }
 
     template <typename T_, typename U_>
-    std::string subscribe(const std::string &name, U_ &&target)
+    std::string subscribe(const std::string &name, U_ &&target) const
     {
         return reg.subscribe<T_>(name, std::forward<U_>(target), entity);
     }
 
     template <typename T_, typename U_>
-    std::string subscribe(ChannelInterface<T_> ci, U_ &&target)
+    std::string subscribe(ChannelInterface<T_> ci, U_ &&target) const
     {
         return reg.subscribe<T_>(ci, std::forward<U_>(target), entity);
     }
