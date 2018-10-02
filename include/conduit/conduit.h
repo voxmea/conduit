@@ -763,7 +763,7 @@ struct Registrar
     struct PyChannel
     {
         // this is the producer/consumer name
-        std::string name;
+        std::string entity;
         RegistryEntryBase *reb;
     };
     #endif
@@ -784,12 +784,11 @@ struct Registrar
         if (!hasattr(conduit, "Channel")) {
             pybind11::class_<PyChannel>(conduit, "Channel")
                 .def_property_readonly("name", [] (PyChannel &pyc) {return pyc.reb->name();})
-                .def_readwrite("extra_name", &PyChannel::name)
+                .def_readwrite("extra_name", &PyChannel::entity)
                 .def_property("debug", [] (PyChannel &pyc) {return pyc.reb->get_debug();}, [] (PyChannel &pyc, bool debug) {pyc.reb->set_debug(debug);})
-                .def("consumers", [] (PyChannel &pyc) {
-                    return pyc.reb->callbacks();
-                })
-                .def("__call__", [] (PyChannel &pyc, pybind11::args args) {pyc.reb->call_from_python(pyc.name, args);});
+                .def("consumers", [] (PyChannel &pyc) { return pyc.reb->callbacks(); })
+                .def("signature", [] (PyChannel &pyc) { return pyc.reb->to_string(); })
+                .def("__call__", [] (PyChannel &pyc, pybind11::args args) {pyc.reb->call_from_python(pyc.entity, args);});
         }
         if (!hasattr(conduit, "TraceNode")) {
             auto tn = pybind11::class_<TraceNode>(conduit, "TraceNode")
