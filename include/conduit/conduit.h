@@ -33,6 +33,8 @@
 #include <utility>
 #include <initializer_list>
 #include <type_traits>
+#include <iostream>
+#include <sstream>
 // #define CONDUIT_CHANNEL_TIMES
 #ifdef CONDUIT_CHANNEL_TIMES
 #include <chrono>
@@ -803,7 +805,9 @@ struct Registrar
             auto pub = [] (Registrar &reg, pybind11::str n_, pybind11::str source) {
                 std::string n = n_;
                 if (reg.map.find(n) == reg.map.end()) {
-                    throw pybind11::index_error(fmt::format("unable to find \"{}\"\n", n));
+                    std::ostringstream stream;
+                    stream << "unable to find \"" << n << "\"";
+                    throw pybind11::index_error(stream.str());
                 }
                 auto &reb = reg.map[n];
                 reg.trace(reb.get(), TraceNode{TraceNode::ENTITY, static_cast<std::string>(source)}, TraceNode{TraceNode::CHANNEL, n});
@@ -812,7 +816,9 @@ struct Registrar
             auto sub = [] (Registrar &reg, pybind11::str n_, pybind11::function func, pybind11::str target) {
                 std::string n = n_;
                 if (reg.map.find(n) == reg.map.end()) {
-                    throw pybind11::index_error(fmt::format("unable to find \"{}\"\n", n));
+                    std::ostringstream stream;
+                    stream << "unable to find \"" << n << "\"";
+                    throw pybind11::index_error(stream.str());
                 }
                 auto &reb = reg.map[n];
                 reb->add_python_callback(func, target);
@@ -843,7 +849,7 @@ struct Registrar
     ~Registrar()
     {
         #if 0
-        fmt::print("destoying {}\n", name);
+        std::cout << "destroying " << name << '\n';
         #endif
     }
 
