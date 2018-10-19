@@ -853,6 +853,9 @@ struct Registrar
         #endif
     }
 
+    Registrar(const Registrar &) = delete;
+    Registrar &operator =(const Registrar &) = delete;
+
     template <typename ...U> struct FixType;
     template <typename R, typename ...U> struct FixType<R(U...)> {using type = R(std::decay_t<U>...);};
 
