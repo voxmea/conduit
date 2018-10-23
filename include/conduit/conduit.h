@@ -774,15 +774,7 @@ struct Registrar
         : name(n_)
     {
         #ifndef CONDUIT_NO_PYTHON
-        pybind11::module m = pybind11::module::import("__main__");
         pybind11::module conduit = pybind11::reinterpret_borrow<pybind11::module>(PyImport_AddModule("conduit"));
-        if (!hasattr(m, "conduit")) {
-            setattr(m, "conduit", conduit);
-        }
-        if (!hasattr(conduit, "registrars")) {
-            pybind11::dict reg;
-            setattr(conduit, "registrars", reg);
-        }
         if (!hasattr(conduit, "Channel")) {
             pybind11::class_<PyChannel>(conduit, "Channel")
                 .def_property_readonly("name", [] (PyChannel &pyc) {return pyc.reb->name();})
