@@ -830,7 +830,7 @@ struct Registrar
                 .def("channels", channels)
                 .def("trace", [] (Registrar &reg, pybind11::function func) {
                     reg.tracers.push_back([func] (TraceNode source, TraceNode dest, std::type_index index) {
-                        func(source, dest, index.name());
+                        func(source, dest, demangle(index.name()));
                     });
                 })
                 .def_readonly("name", &Registrar::name);
