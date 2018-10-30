@@ -737,6 +737,89 @@ struct RegistryEntry<R(T...)> final : RegistryEntryBase
     #endif
 };
 
+// Allow subset views on a channel through make_changer
+
+namespace changer_detail
+{
+    template <int ...I> struct int_seq {};
+    template <typename ...T> struct int_cat;
+    template <int ...T, int ...U> struct int_cat<int_seq<T...>, int_seq<U...>> {using type = int_seq<T..., U...>;};
+
+    template <typename ...T> struct type_list {};
+    template <typename ...T> struct type_cat;
+    template <typename ...T, typename ...U> struct type_cat<type_list<T...>, type_list<U...>> {using type = type_list<T..., U...>;};
+
+    template <typename T, typename ...U> struct first_type {using type = T; using remainder = type_list<U...>;};
+    template <typename T, typename ...U> struct first_type<type_list<T, U...>> {using type = T; using remainder = type_list<U...>;};
+    template <typename ...T> using first_type_t = typename first_type<T...>::type;
+    template <typename ...T> using remainder_t = typename first_type<T...>::remainder;
+
+    template <int I, typename ...T> struct Matcher;
+    template <int I, typename ...U> struct Matcher<I, type_list<>, type_list<U...>>
+    {
+        using type = type_list<>;
+        using seq = int_seq<>;
+    };
+    template <int I, typename ...T> struct Matcher<I, type_list<T...>, type_list<>>
+    {
+        using type = type_list<>;
+        using seq = int_seq<>;
+    };
+    template <int I> struct Matcher<I, type_list<>, type_list<>>
+    {
+        using type = type_list<>;
+        using seq = int_seq<>;
+    };
+    template <int I, typename ...T, typename ...U> struct Matcher<I, type_list<T...>, type_list<U...>>
+    {
+        static constexpr int is_same = std::is_same_v<first_type_t<T...>, first_type_t<U...>>;
+        using match = std::conditional_t<is_same, type_list<first_type_t<T...>>, type_list<>>;
+        using left = remainder_t<T...>;
+        using right = std::conditional_t<is_same, remainder_t<U...>, type_list<U...>>;
+        using type = typename type_cat<match, typename Matcher<I + 1, left, right>::type>::type;
+        using seq = typename int_cat<std::conditional_t<is_same, int_seq<I>, int_seq<>>, typename Matcher<I + 1, left, right>::seq>::type;
+    };
+
+    template <typename ...T> struct ChannelChanger;
+    template <typename ...T, typename ...U, typename R, typename Ignored>
+    struct ChannelChanger<Ignored(T...), R(U...)>
+    {
+        using type = typename Matcher<0, type_list<T...>, type_list<U...>>::type;
+        using seq = typename Matcher<0, type_list<T...>, type_list<U...>>::seq;
+        static_assert(std::is_same_v<type, type_list<U...>>, "incompatible mapping");
+
+        conduit::Function<R(U...)> f;
+
+        template <typename ...V, int ...I>
+        R apply(const std::tuple<V...> &v, int_seq<I...>)
+        {
+            return f(std::get<I>(v)...);
+        }
+
+        template <typename ...V>
+        R operator() (V &&...v)
+        {
+            return this->apply(std::make_tuple(v...), seq());
+        }
+    };
+
+    // workaround for gcc
+    template <typename ...T> struct SizeHelper;
+    template <typename R, typename ...T> struct SizeHelper<R(T...)> { static constexpr int size = sizeof...(T); };
+}
+
+template <typename T, typename U>
+auto make_changer(U &&u)
+{
+    return changer_detail::ChannelChanger<T, typename CallableInfo<U>::signature>{std::forward<U>(u)};
+}
+
+template <typename T, typename U>
+void make_changer(ChannelInterface<T> ci, U &&u, const std::string &entity = "")
+{
+    ci.channel->registrar.subscribe(ci, make_changer<T>(std::forward<U>(u)), entity);
+}
+
 // Registrar is the thing that keeps track of all channels by address.
 
 struct Registrar
@@ -880,21 +963,40 @@ struct Registrar
         return ChannelInterface<T>{detail::Names::get_id_for_string(source), channel};
     }
 
-    template <typename T_, typename U_>
-    std::string subscribe(const std::string &name, U_ &&target, const std::string &target_name = "")
+    template <typename T, typename U>
+    void subscribe(Channel<T> *channel, U &&target, std::string target_name, std::true_type)
+    {
+        channel->hook(std::forward<U>(target), target_name);
+    }
+
+    template <typename T, typename U>
+    void subscribe(Channel<T> *channel, U &&target, std::string target_name, std::false_type)
+    {
+        channel->hook(make_changer<T>(std::forward<U>(target)), target_name);
+    }
+
+    template <typename T_, typename U>
+    std::string subscribe(const std::string &name, U &&target, const std::string &target_name = "")
     {
         using T = typename FixType<T_>::type;
         static_assert(std::is_function<T_>::value, "subscribe must be passed a function type");
         auto &re = find<T>(name);
-        re.channel.hook(std::forward<U_>(target), target_name);
+
+        using same_size_t = std::conditional_t<changer_detail::SizeHelper<T>::size == changer_detail::SizeHelper<typename CallableInfo<std::decay_t<U>>::signature>::size,
+                                               std::true_type,
+                                               std::false_type>;
+        subscribe(&re.channel, std::forward<U>(target), target_name, same_size_t{});
         trace(map[name].get(), TraceNode{TraceNode::CHANNEL, name}, TraceNode{TraceNode::ENTITY, target_name});
         return target_name;
     }
 
-    template <typename T_, typename U_>
-    std::string subscribe(ChannelInterface<T_> ci, U_ &&target, const std::string &target_name = "")
+    template <typename T, typename U>
+    std::string subscribe(ChannelInterface<T> ci, U &&target, const std::string &target_name = "")
     {
-        ci.channel->hook(target, target_name);
+        using same_size_t = std::conditional_t<changer_detail::SizeHelper<T>::size == changer_detail::SizeHelper<typename CallableInfo<std::decay_t<U>>::signature>::size,
+                                               std::true_type,
+                                               std::false_type>;
+        subscribe(ci.channel, std::forward<U>(target), target_name, same_size_t{});
         trace(map[ci.name()].get(), TraceNode{TraceNode::CHANNEL, ci.name()}, TraceNode{TraceNode::ENTITY, target_name});
         return target_name;
     }
