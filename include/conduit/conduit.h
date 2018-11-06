@@ -737,6 +737,33 @@ struct RegistryEntry<R(T...)> final : RegistryEntryBase
     #endif
 };
 
+struct ViewBase {
+    std::type_index orig_ti = std::type_index(typeid(void));
+    std::type_index new_ti = std::type_index(typeid(void));
+
+    virtual ~ViewBase() {}
+};
+
+template <typename ...T> struct View;
+template <typename R, typename ...T>
+struct View<R(T...)> : ViewBase
+{
+    conduit::Function<void(conduit::Function<R(T...)>, std::string)> subscribe_function;
+
+    template <typename U>
+    View(ChannelInterface<U> ci)
+    {
+        subscribe_function = [=] (conduit::Function<R(T...)> cb, std::string name) {
+            ci.channel->registrar.template subscribe<U>(ci, cb, name);
+        };
+    }
+
+    void subscribe(conduit::Function<R(T...)> cb, std::string name)
+    {
+        subscribe_function(cb, name);
+    }
+};
+
 // Allow subset views on a channel through make_changer
 
 namespace changer_detail
@@ -811,7 +838,7 @@ namespace changer_detail
 template <typename T, typename U>
 auto make_changer(U &&u)
 {
-    return changer_detail::ChannelChanger<T, typename CallableInfo<U>::signature>{std::forward<U>(u)};
+    return changer_detail::ChannelChanger<T, typename CallableInfo<std::decay_t<U>>::signature>{std::forward<U>(u)};
 }
 
 template <typename T, typename U>
@@ -826,6 +853,7 @@ struct Registrar
 {
     std::string name;
     std::unordered_map<std::string, std::unique_ptr<RegistryEntryBase>> map;
+    std::unordered_map<std::string, std::unordered_map<std::type_index, std::unique_ptr<ViewBase>>> views;
 
     struct TraceNode
     {
@@ -1022,6 +1050,28 @@ struct Registrar
         for (auto &p : map) {
             c(*p.second);
         }
+    }
+
+    template <typename sig_, typename chan_sig>
+    void register_view(ChannelInterface<chan_sig> ci)
+    {
+        BOTCH(&ci.channel->registrar != this, "Registrar mismatch");
+        using sig = typename FixType<sig_>::type;
+        auto &ti_map = views[ci.channel->name];
+        std::type_index new_ti{typeid(sig)};
+        if (ti_map.find(new_ti) == ti_map.end()) {
+            ti_map[new_ti] = std::make_unique<View<sig>>(ci);
+        }
+    }
+
+    template <typename U>
+    void subscribe_view(std::string name, U &&u, std::string entity)
+    {
+        auto &ti_map = views[name];
+        using sig = typename FixType<typename CallableInfo<U>::signature>::type;
+        std::type_index new_ti{typeid(sig)};
+        BOTCH(ti_map.find(new_ti) == ti_map.end(), "View not registered");
+        reinterpret_cast<View<sig> *>(ti_map[new_ti].get())->subscribe(conduit::Function<sig>(u), entity);
     }
 };
 

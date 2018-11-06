@@ -3,6 +3,7 @@
 #define CALLABLE_INFO_H_
 
 #include <conduit/conduit-utility.h>
+#include <conduit/function.h>
 #include <tuple>
 #include <functional>
 #include <type_traits>
@@ -56,6 +57,15 @@ struct CallableInfo<T_> {
     using seq_type = typename CallableInfo<operator_call_type>::seq_type;
     using function_type = typename CallableInfo<operator_call_type>::function_type;
     using signature = typename std::remove_pointer<function_type>::type;
+};
+
+template <typename T_>
+struct CallableInfo<conduit::Function<T_>> {
+    using return_type = typename CallableInfo<T_>::return_type;
+    using tuple_parameter_type = typename CallableInfo<T_>::tuple_parameter_type;
+    using seq_type = typename CallableInfo<T_>::seq_type;
+    using function_type = typename CallableInfo<T_>::function_type;
+    using signature = typename CallableInfo<T_>::signature;
 };
 
 }

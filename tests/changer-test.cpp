@@ -40,3 +40,50 @@ TEST(conduit_changer, basic)
     ASSERT_EQ(two_arg_int, 10);
     ASSERT_EQ(two_arg_double, 3.14);
 }
+
+TEST(conduit_changer, basic_view)
+{
+    conduit::Registrar reg("dut");
+
+    using sig = void(int, double, Foo);
+
+    auto ci = reg.publish<sig>("test");
+    reg.register_view<void(int)>(ci);
+    reg.register_view<void(double)>(ci);
+
+    int view_int = 0;
+    reg.subscribe_view("test", [&] (int i) {
+        view_int = i;
+    }, "test");
+
+    double view_double = 0;
+    reg.subscribe_view("test", [&] (double d) {
+        view_double = d;
+    }, "test");
+
+    {
+        bool botched = false;
+        try {
+            reg.subscribe_view("test", [&] (Foo) { }, "test");
+        } catch (const conduit::ConduitError &ex) {
+            botched = true;
+        }
+        ASSERT_TRUE(botched);
+    }
+
+    reg.register_view<void(Foo)>(ci);
+    {
+        bool botched = false;
+        try {
+            reg.subscribe_view("test", [&] (Foo) { }, "test");
+        } catch (const conduit::ConduitError &ex) {
+            botched = true;
+        }
+        ASSERT_FALSE(botched);
+    }
+
+
+    ci(10, 3.14, Foo{"foo arg"});
+    ASSERT_EQ(view_int, 10);
+    ASSERT_EQ(view_double, 3.14);
+}
