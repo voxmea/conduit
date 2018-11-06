@@ -7,3 +7,6 @@
 [submodule "examples/benchmark"]
 	path = examples/benchmark
 	url = https://github.com/google/benchmark.git
+[submodule "tests/googletest"]
+	path = tests/googletest
+	url = https://github.com/google/googletest.git

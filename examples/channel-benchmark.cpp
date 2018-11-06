@@ -1,7 +1,7 @@
 
 #define CONDUIT_NO_LUA
 #define CONDUIT_NO_PYTHON
-#define SOURCE_STRING_INTERNING
+#define CONDUIT_SOURCE_STRING_INTERNING
 #include <conduit/conduit.h>
 #include <random>
 

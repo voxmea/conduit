@@ -59,7 +59,7 @@ namespace detail
 
     struct Names
     {
-        #ifdef SOURCE_STRING_INTERNING
+        #ifdef CONDUIT_SOURCE_STRING_INTERNING
         // do not call this directly, use the accessors below
         static std::unordered_map<uint64_t, std::string> &get_names()
         {
@@ -477,7 +477,7 @@ template <typename ...T> struct ChannelInterface;
 template <typename R, typename ...T>
 struct ChannelInterface<R(T...)>
 {
-    #ifdef SOURCE_STRING_INTERNING
+    #ifdef CONDUIT_SOURCE_STRING_INTERNING
     uint64_t source_id;
     #else
     std::string source_id;
@@ -1080,6 +1080,16 @@ void Channel<R(T...)>::print_debug_impl(const std::string &source, const T &... 
     CONDUIT_LOGGER << source << " -> " << registrar.name << "." << name << "(";
     detail::call_print_arg(CONDUIT_LOGGER, t...);
     CONDUIT_LOGGER << ")\n";
+}
+
+/**
+   connect a single callback to multiple channels with varying signatures
+   uses type matching if necessary
+ */
+template <typename C, typename ...U>
+std::string subscribe(C &&callback, std::string name, U ...u)
+{
+    std::initializer_list<std::string>{u.channel->registrar->template subscribe<typename CallableInfo<U>::signature>(u, callback, name)...};
 }
 
 #define conduit_run_expand_(x, y) x ## y
