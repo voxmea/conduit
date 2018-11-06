@@ -4,3 +4,6 @@
 [submodule "examples/pybind11"]
 	path = examples/pybind11
 	url = https://github.com/pybind/pybind11.git
+[submodule "examples/benchmark"]
+	path = examples/benchmark
+	url = https://github.com/google/benchmark.git

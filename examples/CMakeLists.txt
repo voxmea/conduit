@@ -4,7 +4,7 @@ project(conduit-examples)
 
 add_subdirectory(conduit EXCLUDE_FROM_ALL)
 add_subdirectory(fmt EXCLUDE_FROM_ALL)
-
+add_subdirectory(benchmark EXCLUDE_FROM_ALL)
 add_definitions(-D __STDC_LIMIT_MACROS -D __STDC_CONSTANT_MACROS -D __STDC_FORMAT_MACROS)
 
 file(GLOB examples *.cpp)
@@ -15,9 +15,9 @@ foreach(example ${examples})
     add_executable(${target} ${example})
     target_link_libraries(${target} conduit fmt)
 
-    target_compile_options(${target} PUBLIC "-gdwarf-2" "-g")
-    if (${target} STREQUAL conduit-speed-test)
-        target_compile_options(${target} PUBLIC "-fno-devirtualize")
+    if (${target} STREQUAL channel-benchmark)
+        target_link_libraries(${target} benchmark_main)
     endif()
+    target_compile_options(${target} PUBLIC "-g")
 endforeach()
 
