@@ -772,7 +772,7 @@ namespace changer_detail
     };
     template <int I, typename ...T, typename ...U> struct Matcher<I, type_list<T...>, type_list<U...>>
     {
-        static constexpr int is_same = std::is_same_v<first_type_t<T...>, first_type_t<U...>>;
+        static constexpr int is_same = std::is_same<first_type_t<T...>, first_type_t<U...>>::value;
         using match = std::conditional_t<is_same, type_list<first_type_t<T...>>, type_list<>>;
         using left = remainder_t<T...>;
         using right = std::conditional_t<is_same, remainder_t<U...>, type_list<U...>>;
@@ -786,7 +786,7 @@ namespace changer_detail
     {
         using type = typename Matcher<0, type_list<T...>, type_list<U...>>::type;
         using seq = typename Matcher<0, type_list<T...>, type_list<U...>>::seq;
-        static_assert(std::is_same_v<type, type_list<U...>>, "incompatible mapping");
+        static_assert(std::is_same<type, type_list<U...>>::value, "incompatible mapping");
 
         conduit::Function<R(U...)> f;
 
