@@ -227,8 +227,8 @@ struct Channel<R(T...)> final : public ChannelBase
             c.cb(t...);
         }
         in_callbacks = false;
-        if (pending_unhook.size())
-            unhook_();
+        if (pending_unsubscribe.size())
+            unsubscribe_();
 
         #ifdef CONDUIT_CHANNEL_TIMES
         auto end = std::chrono::high_resolution_clock::now();
@@ -254,8 +254,8 @@ struct Channel<R(T...)> final : public ChannelBase
             ret.emplace_back(c.cb(t...));
         }
         in_callbacks = false;
-        if (pending_unhook.size())
-            unhook_();
+        if (pending_unsubscribe.size())
+            unsubscribe_();
 
         if (resolves->size()) {
             in_resolves = true;
@@ -278,34 +278,34 @@ struct Channel<R(T...)> final : public ChannelBase
 
 private:
     template <typename C>
-    std::string hook(C &&c, std::string client_name, int group = 0)
+    std::string subscribe(C &&c, std::string client_name, int group = 0)
     {
-        BOTCH(in_callbacks, "Can't hook while in_callbacks");
+        BOTCH(in_callbacks, "Can't subscribe while in_callbacks");
         using C_RET = decltype(c(std::declval<const T>()...));
-        hook_(std::forward<C>(c), client_name, group, typename detail::ReturnTypeTag<C_RET, R>::type());
+        subscribe_(std::forward<C>(c), client_name, group, typename detail::ReturnTypeTag<C_RET, R>::type());
         return client_name;
     }
 
-    void unhook(const std::string &client_name)
+    void unsubscribe(const std::string &client_name)
     {
-        BOTCH(client_name.empty(), "no unhooks of unnamed clients");
+        BOTCH(client_name.empty(), "no unsubscribes of unnamed clients");
         auto pos = std::find_if(callbacks->begin(), callbacks->end(), [client_name] (struct Channel<R(T...)>::Callback &cb) {
             return cb.name == client_name;
         });
         if (pos == callbacks->end())
             return;
-        pending_unhook.push_back(std::distance(callbacks->begin(), pos));
+        pending_unsubscribe.push_back(std::distance(callbacks->begin(), pos));
         if (!in_callbacks) {
-            unhook_();
+            unsubscribe_();
         }
     }
 
-    void unhook(size_t index)
+    void unsubscribe(size_t index)
     {
         if (index < callbacks->size())
-            pending_unhook.push_back(index);
+            pending_unsubscribe.push_back(index);
         if (!in_callbacks) {
-            unhook_();
+            unsubscribe_();
         }
     }
 
@@ -322,7 +322,7 @@ private:
 
     void unresolve(const std::string &client_name)
     {
-        BOTCH(client_name.empty(), "no unhooks of unnamed clients");
+        BOTCH(client_name.empty(), "no unsubscribes of unnamed clients");
         auto pos = std::find_if(resolves->begin(), resolves->end(), [client_name] (struct Channel<R(T...)>::Callback &cb) {
             return cb.name == client_name;
         });
@@ -330,7 +330,7 @@ private:
             return;
         pending_unresolve.push_back(std::distance(resolves->begin(), pos));
         if (!in_callbacks) {
-            unhook_();
+            unsubscribe_();
         }
     }
 
@@ -368,7 +368,7 @@ private:
 
     bool in_callbacks = false;
     std::shared_ptr<std::vector<Callback>> callbacks = std::make_shared<std::vector<Callback>>();
-    std::vector<size_t> pending_unhook;
+    std::vector<size_t> pending_unsubscribe;
 
     bool in_resolves = false;
     std::shared_ptr<std::vector<Resolve>> resolves = std::make_shared<std::vector<Resolve>>();
@@ -385,7 +385,7 @@ private:
     std::vector<RetType> ret;
 
     template <typename C>
-    void hook_(C &&c, const std::string &client_name, int group, detail::ExactReturnTypeTag)
+    void subscribe_(C &&c, const std::string &client_name, int group, detail::ExactReturnTypeTag)
     {
         auto iter = std::upper_bound(callbacks->begin(), callbacks->end(), group, [] (int group, const Callback &cb) {
             return group < cb.group;
@@ -394,7 +394,7 @@ private:
     }
 
     template <typename C>
-    void hook_(C &&c, const std::string &client_name, int group, detail::ConvertibleReturnTypeTag)
+    void subscribe_(C &&c, const std::string &client_name, int group, detail::ConvertibleReturnTypeTag)
     {
         auto capture = c;
         auto iter = std::upper_bound(callbacks->begin(), callbacks->end(), group, [] (int group, const Callback &cb) {
@@ -404,7 +404,7 @@ private:
     }
 
     template <typename C>
-    void hook_(C &&c, const std::string &client_name, int group, detail::OptionalNullTypeTag)
+    void subscribe_(C &&c, const std::string &client_name, int group, detail::OptionalNullTypeTag)
     {
         auto capture = c;
         auto iter = std::upper_bound(callbacks->begin(), callbacks->end(), group, [] (int group, const Callback &cb) {
@@ -413,12 +413,12 @@ private:
         callbacks->insert(iter, Callback{[capture] (const T &...t) mutable {capture(t...); return conduit::OptionalNull();}, client_name, group});
     }
 
-    void unhook_()
+    void unsubscribe_()
     {
         callbacks->erase(std::remove_if(callbacks->begin(), callbacks->end(), [this] (struct Channel<R(T...)>::Callback &cb) {
-            return std::find(pending_unhook.begin(), pending_unhook.end(), &cb - &(*callbacks)[0]) != pending_unhook.end();
+            return std::find(pending_unsubscribe.begin(), pending_unsubscribe.end(), &cb - &(*callbacks)[0]) != pending_unsubscribe.end();
         }), callbacks->end());
-        pending_unhook.clear();
+        pending_unsubscribe.clear();
     }
 
     void unresolve_()
@@ -431,7 +431,7 @@ private:
 
     void erase(int index)
     {
-        unhook(index);
+        unsubscribe(index);
     }
 
     // Used by Lua and Python
@@ -542,13 +542,14 @@ struct ChannelInterface<R(T...)>
 struct Optuple
 {
     virtual void reset() = 0;
+    virtual uint64_t get_state() = 0;
     virtual ~Optuple() {}
 };
 
 template <typename Callback, typename Data>
 struct OptupleImpl : Optuple
 {
-    detail::TupleState state;
+    uint64_t state = 0;
     Data data;
     Callback callback;
     conduit::Function<void()> response;
@@ -582,7 +583,7 @@ struct OptupleImpl : Optuple
     int destroy()
     {
         using element_type = typename detail::TupleElement<index, Data>::element_type;
-        if (state.val & (1ULL << index)) {
+        if (state & (1ULL << index)) {
             detail::TupleGetVal<index>::get(data).~element_type();
         }
         return index;
@@ -597,7 +598,7 @@ struct OptupleImpl : Optuple
     }
 
     template <int index, int data_index, uint64_t mask, typename R, typename ...T, size_t ...I>
-    int hook(ChannelInterface<R(T...)> ci, std::index_sequence<I...>)
+    int subscribe(ChannelInterface<R(T...)> ci, std::index_sequence<I...>)
     {
         ci.channel->registrar.template subscribe<R(T...)>(ci.name(), [this] (T ...t) {
             (void) (std::initializer_list<int>{
@@ -606,8 +607,8 @@ struct OptupleImpl : Optuple
             (void) (std::initializer_list<int>{
                 create<data_index + I>(std::move(t))...
             });
-            state.val |= (1ULL << index);
-            if (state.val == mask) {
+            state |= (1ULL << index);
+            if (state == mask) {
                 fire(typename IndexForTuple<Data>::type());
             }
         }, entity_name);
@@ -615,11 +616,11 @@ struct OptupleImpl : Optuple
     }
 
     template <int index, int data_index, uint64_t mask, typename R, size_t ...I>
-    int hook(ChannelInterface<R()> ci, std::index_sequence<I...>)
+    int subscribe(ChannelInterface<R()> ci, std::index_sequence<I...>)
     {
         ci.channel->registrar.template subscribe<R()>(ci.name(), [this] {
-            state.val |= (1ULL << index);
-            if (state.val == mask) {
+            state |= (1ULL << index);
+            if (state == mask) {
                 fire(typename IndexForTuple<Data>::type());
             }
         }, entity_name);
@@ -631,7 +632,7 @@ struct OptupleImpl : Optuple
     {
         const uint64_t mask = (1ULL << sizeof...(cis)) - 1;
         (void)(std::initializer_list<int>({
-            hook<I, GenDataIndex<I, 0, void, ChannelInterface<T>...>::data_index, mask>(cis, typename CallableInfo<T>::seq_type())...
+            subscribe<I, GenDataIndex<I, 0, void, ChannelInterface<T>...>::data_index, mask>(cis, typename CallableInfo<T>::seq_type())...
         }));
     }
 
@@ -646,7 +647,12 @@ struct OptupleImpl : Optuple
     void reset() override
     {
         clear(typename IndexForTuple<Data>::type());
-        state.val = 0;
+        state = 0;
+    }
+
+    uint64_t get_state() override
+    {
+        return state;
     }
 
     template <typename ...T>
@@ -731,7 +737,7 @@ struct RegistryEntry<R(T...)> final : RegistryEntryBase
     #ifndef CONDUIT_NO_PYTHON
     void add_python_callback(pybind11::function func, const std::string &n, int group) override
     {
-        channel.hook(func, n, group);
+        channel.subscribe(func, n, group);
     }
     void call_from_python(const std::string &source, pybind11::args args) override {channel.call_from_python(source, args);}
     #endif
@@ -756,6 +762,22 @@ struct View<R(T...)> : ViewBase
         subscribe_function = [=] (conduit::Function<R(T...)> cb, std::string name) {
             ci.channel->registrar.template subscribe<U>(ci, cb, name);
         };
+    }
+
+    template <typename U, typename V, typename Ret, typename ...Args>
+    void set_subscribe_function(ChannelInterface<U> ci, V &&v, Ret(*)(Args...))
+    {
+        subscribe_function = [=] (conduit::Function<R(T...)> cb, std::string name) {
+            ci.channel->registrar.template subscribe<U>(ci, [=] (const Args &...args) {
+                return cb(v(args...));
+            });
+        };
+    }
+
+    template <typename U, typename V>
+    View(ChannelInterface<U> ci, V &&v)
+    {
+        set_subscribe_function(ci, std::forward<V>(v), typename CallableInfo<V>::function_type{nullptr});
     }
 
     void subscribe(conduit::Function<R(T...)> cb, std::string name)
@@ -994,13 +1016,13 @@ struct Registrar
     template <typename T, typename U>
     void subscribe(Channel<T> *channel, U &&target, std::string target_name, std::true_type)
     {
-        channel->hook(std::forward<U>(target), target_name);
+        channel->subscribe(std::forward<U>(target), target_name);
     }
 
     template <typename T, typename U>
     void subscribe(Channel<T> *channel, U &&target, std::string target_name, std::false_type)
     {
-        channel->hook(make_changer<T>(std::forward<U>(target)), target_name);
+        channel->subscribe(make_changer<T>(std::forward<U>(target)), target_name);
     }
 
     template <typename T_, typename U>
@@ -1055,12 +1077,28 @@ struct Registrar
     template <typename sig_, typename chan_sig>
     void register_view(ChannelInterface<chan_sig> ci)
     {
-        BOTCH(&ci.channel->registrar != this, "Registrar mismatch");
+        if (&ci.channel->registrar != this) {
+            throw conduit::ConduitError("Registrar mismatch");
+        }
         using sig = typename FixType<sig_>::type;
         auto &ti_map = views[ci.channel->name];
         std::type_index new_ti{typeid(sig)};
         if (ti_map.find(new_ti) == ti_map.end()) {
             ti_map[new_ti] = std::make_unique<View<sig>>(ci);
+        }
+    }
+
+    template <typename Sig_, typename ChanSig, typename Trans>
+    void register_view(ChannelInterface<ChanSig> ci, Trans &&trans)
+    {
+        if (&ci.channel->registrar != this) {
+            throw conduit::ConduitError("Registrar mismatch");
+        }
+        using Sig = typename FixType<Sig_>::type;
+        auto &ti_map = views[ci.channel->name];
+        std::type_index new_ti{typeid(Sig)};
+        if (ti_map.find(new_ti) == ti_map.end()) {
+            ti_map[new_ti] = std::make_unique<View<Sig>>(ci, std::forward<Trans>(trans));
         }
     }
 
@@ -1070,7 +1108,9 @@ struct Registrar
         auto &ti_map = views[name];
         using sig = typename FixType<typename CallableInfo<U>::signature>::type;
         std::type_index new_ti{typeid(sig)};
-        BOTCH(ti_map.find(new_ti) == ti_map.end(), "View not registered");
+        if (ti_map.find(new_ti) == ti_map.end()) {
+            throw conduit::ConduitError("view not registered");
+        }
         reinterpret_cast<View<sig> *>(ti_map[new_ti].get())->subscribe(conduit::Function<sig>(u), entity);
     }
 };
@@ -1140,11 +1180,12 @@ template <typename C, typename ...U>
 std::string subscribe(C &&callback, std::string name, U ...u)
 {
     std::initializer_list<std::string>{u.channel->registrar->template subscribe<typename CallableInfo<U>::signature>(u, callback, name)...};
+    return name;
 }
 
 #define conduit_run_expand_(x, y) x ## y
 #define conduit_run_expand(x, y) conduit_run_expand_(x, y)
-#define conduit_run(...) std::string conduit_run_expand(conduit_unique_mem_hook_id_, __COUNTER__) = __VA_ARGS__
+#define conduit_run(...) std::string conduit_run_expand(conduit_unique_mem_subscribe_id_, __COUNTER__) = __VA_ARGS__
 
 } // namespace conduit
 

@@ -19,9 +19,10 @@ TEST(Optuple, basic)
     conduit::Registrar reg("test");
     int left = 0, right = 0;
     auto c = [&] (int i, int j) {
-        left = i, right = j;
+        left = i;
+        right = j;
     };
-    merge(c, reg.publish<void(int)>("one"), reg.publish<void(int)>("two"));
+    auto m = merge(c, reg.publish<void(int)>("one"), reg.publish<void(int)>("two"));
     reg.publish<void(int)>("one")(10);
     reg.publish<void(int)>("two")(20);
     ASSERT_EQ(left, 10);

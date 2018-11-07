@@ -207,11 +207,6 @@ template <typename T> struct is_trivially_copyable<conduit::Optional<T>> : is_tr
 namespace conduit {
 namespace detail
 {
-    struct TupleState
-    {
-        uint64_t val = 0;
-    };
-
     template <typename ...T> struct Tuple;
     template <typename T, typename ...U>
     struct Tuple<T, U...>
@@ -287,7 +282,7 @@ namespace detail
     template <> struct TupleSet<0>
     {
         template <typename V, typename ...T>
-        static void set(TupleState &state, Tuple<T...> &t, V &&v)
+        static void set(Tuple<T...> &t, V &&v)
         {
             using element_type = typename TupleElement<0, Tuple<T...>>::element_type;
             new (&t.buf) element_type(std::forward<V>(v));

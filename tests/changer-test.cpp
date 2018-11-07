@@ -65,7 +65,7 @@ TEST(conduit_changer, basic_view)
         bool botched = false;
         try {
             reg.subscribe_view("test", [&] (Foo) { }, "test");
-        } catch (const conduit::ConduitError &ex) {
+        } catch (const conduit::ConduitError &) {
             botched = true;
         }
         ASSERT_TRUE(botched);
@@ -76,14 +76,33 @@ TEST(conduit_changer, basic_view)
         bool botched = false;
         try {
             reg.subscribe_view("test", [&] (Foo) { }, "test");
-        } catch (const conduit::ConduitError &ex) {
+        } catch (const conduit::ConduitError &) {
             botched = true;
         }
         ASSERT_FALSE(botched);
     }
 
-
     ci(10, 3.14, Foo{"foo arg"});
     ASSERT_EQ(view_int, 10);
     ASSERT_EQ(view_double, 3.14);
+}
+
+TEST(conduit_changer, transformation_view)
+{
+    conduit::Registrar reg("dut");
+
+    using sig = void(int, double);
+
+    auto ci = reg.publish<sig>("test");
+    reg.register_view<void(std::string)>(ci, [] (double d) {
+        return std::to_string(d) + " extra test val";
+    });
+
+    std::string trans_str;
+    reg.subscribe_view("test", [&] (const std::string &s) {
+        trans_str = s;
+    }, "test");
+
+    ci(10, 3.14);
+    ASSERT_EQ(trans_str, (std::to_string(3.14) + " extra test val"));
 }

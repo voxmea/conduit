@@ -2,6 +2,15 @@
 cmake_minimum_required(VERSION 3.5)
 project(conduit-tests)
 
+# remove this after fixing BOTCH for MSVC when not compiling for c++17
+if (MSVC)
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
+else()
+    set(CMAKE_CXX_STANDARD 14)
+endif()
+
 add_subdirectory(googletest)
 
 include(GoogleTest)
