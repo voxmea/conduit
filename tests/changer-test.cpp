@@ -52,19 +52,19 @@ TEST(conduit_changer, basic_view)
     reg.register_view<void(double)>(ci);
 
     int view_int = 0;
-    reg.subscribe_view("test", [&] (int i) {
+    reg.subscribe("test", [&] (int i) {
         view_int = i;
     }, "test");
 
     double view_double = 0;
-    reg.subscribe_view("test", [&] (double d) {
+    reg.subscribe("test", [&] (double d) {
         view_double = d;
     }, "test");
 
     {
         bool botched = false;
         try {
-            reg.subscribe_view("test", [&] (Foo) { }, "test");
+            reg.subscribe("test", [&] (Foo) { }, "test");
         } catch (const conduit::ConduitError &) {
             botched = true;
         }
@@ -75,7 +75,7 @@ TEST(conduit_changer, basic_view)
     {
         bool botched = false;
         try {
-            reg.subscribe_view("test", [&] (Foo) { }, "test");
+            reg.subscribe("test", [&] (Foo) { }, "test");
         } catch (const conduit::ConduitError &) {
             botched = true;
         }
@@ -99,7 +99,7 @@ TEST(conduit_changer, transformation_view)
     });
 
     std::string trans_str;
-    reg.subscribe_view("test", [&] (const std::string &s) {
+    reg.subscribe("test", [&] (const std::string &s) {
         trans_str = s;
     }, "test");
 

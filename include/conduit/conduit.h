@@ -1001,79 +1001,6 @@ struct Registrar
         return static_cast<RegistryEntry<T> &>(*map[name]);
     }
 
-    template <typename T_>
-    ChannelInterface<typename FixType<T_>::type> publish(const std::string &name, const std::string &source = "")
-    {
-        using T = typename FixType<T_>::type;
-        static_assert(std::is_function<T_>::value, "publish must be passed a function type");
-        auto &re = find<T>(name);
-        auto *channel = &re.channel;
-
-        trace(map[name].get(), TraceNode{TraceNode::ENTITY, source}, TraceNode{TraceNode::CHANNEL, name});
-        return ChannelInterface<T>{detail::Names::get_id_for_string(source), channel};
-    }
-
-    template <typename T, typename U>
-    void subscribe(Channel<T> *channel, U &&target, std::string target_name, std::true_type)
-    {
-        channel->subscribe(std::forward<U>(target), target_name);
-    }
-
-    template <typename T, typename U>
-    void subscribe(Channel<T> *channel, U &&target, std::string target_name, std::false_type)
-    {
-        channel->subscribe(make_changer<T>(std::forward<U>(target)), target_name);
-    }
-
-    template <typename T_, typename U>
-    std::string subscribe(const std::string &name, U &&target, const std::string &target_name = "")
-    {
-        using T = typename FixType<T_>::type;
-        static_assert(std::is_function<T_>::value, "subscribe must be passed a function type");
-        auto &re = find<T>(name);
-
-        using same_size_t = std::conditional_t<changer_detail::SizeHelper<T>::size == changer_detail::SizeHelper<typename CallableInfo<std::decay_t<U>>::signature>::size,
-                                               std::true_type,
-                                               std::false_type>;
-        subscribe(&re.channel, std::forward<U>(target), target_name, same_size_t{});
-        trace(map[name].get(), TraceNode{TraceNode::CHANNEL, name}, TraceNode{TraceNode::ENTITY, target_name});
-        return target_name;
-    }
-
-    template <typename T, typename U>
-    std::string subscribe(ChannelInterface<T> ci, U &&target, const std::string &target_name = "")
-    {
-        using same_size_t = std::conditional_t<changer_detail::SizeHelper<T>::size == changer_detail::SizeHelper<typename CallableInfo<std::decay_t<U>>::signature>::size,
-                                               std::true_type,
-                                               std::false_type>;
-        subscribe(ci.channel, std::forward<U>(target), target_name, same_size_t{});
-        trace(map[ci.name()].get(), TraceNode{TraceNode::CHANNEL, ci.name()}, TraceNode{TraceNode::ENTITY, target_name});
-        return target_name;
-    }
-
-    // NOTE! this operation is not transitive. To alias multiple channels you
-    // must use the same base registrar!
-    void alias(Registrar &reg, std::string name)
-    {
-        BOTCH(map.find(name) == map.end(), "alias channel must already exist");
-        map[name]->alias(reg);
-    }
-
-    void set_debug(bool debug)
-    {
-        for (auto &p : map) {
-            p.second->set_debug(debug);
-        }
-    }
-
-    template <typename C>
-    void visit(C &&c)
-    {
-        for (auto &p : map) {
-            c(*p.second);
-        }
-    }
-
     template <typename sig_, typename chan_sig>
     void register_view(ChannelInterface<chan_sig> ci)
     {
@@ -1102,8 +1029,61 @@ struct Registrar
         }
     }
 
+    template <typename T_>
+    ChannelInterface<typename FixType<T_>::type> publish(const std::string &name, const std::string &source = "")
+    {
+        using T = typename FixType<T_>::type;
+        static_assert(std::is_function<T_>::value, "publish must be passed a function type");
+        auto &re = find<T>(name);
+        auto *channel = &re.channel;
+
+        trace(map[name].get(), TraceNode{TraceNode::ENTITY, source}, TraceNode{TraceNode::CHANNEL, name});
+        return ChannelInterface<T>{detail::Names::get_id_for_string(source), channel};
+    }
+
+    template <typename T, typename U>
+    void subscribe(Channel<T> *channel, U &&target, std::string target_name, std::true_type)
+    {
+        channel->subscribe(std::forward<U>(target), target_name);
+        register_view<typename CallableInfo<std::decay_t<U>>::signature>(ChannelInterface<T>{detail::Names::get_id_for_string(""), channel});
+    }
+
+    template <typename T, typename U>
+    void subscribe(Channel<T> *channel, U &&target, std::string target_name, std::false_type)
+    {
+        channel->subscribe(make_changer<T>(std::forward<U>(target)), target_name);
+        register_view<typename CallableInfo<std::decay_t<U>>::signature>(ChannelInterface<T>{detail::Names::get_id_for_string(""), channel});
+    }
+
+    template <typename T_, typename U>
+    std::string subscribe(const std::string &name, U &&target, const std::string &target_name = "")
+    {
+        using T = typename FixType<T_>::type;
+        static_assert(std::is_function<T_>::value, "subscribe must be passed a function type");
+        auto &re = find<T>(name);
+
+        using same_size_t = std::conditional_t<changer_detail::SizeHelper<T>::size == changer_detail::SizeHelper<typename CallableInfo<std::decay_t<U>>::signature>::size,
+                                               std::true_type,
+                                               std::false_type>;
+        subscribe(&re.channel, std::forward<U>(target), target_name, same_size_t{});
+        trace(map[name].get(), TraceNode{TraceNode::CHANNEL, name}, TraceNode{TraceNode::ENTITY, target_name});
+        return target_name;
+    }
+
+    template <typename T, typename U>
+    std::string subscribe(ChannelInterface<T> ci, U &&target, const std::string &target_name = "")
+    {
+        BOTCH(&ci.channel->registrar != this, "Registrar mismatch");
+        using same_size_t = std::conditional_t<changer_detail::SizeHelper<T>::size == changer_detail::SizeHelper<typename CallableInfo<std::decay_t<U>>::signature>::size,
+                                               std::true_type,
+                                               std::false_type>;
+        subscribe(ci.channel, std::forward<U>(target), target_name, same_size_t{});
+        trace(map[ci.name()].get(), TraceNode{TraceNode::CHANNEL, ci.name()}, TraceNode{TraceNode::ENTITY, target_name});
+        return target_name;
+    }
+
     template <typename U>
-    void subscribe_view(std::string name, U &&u, std::string entity)
+    void subscribe(std::string name, U &&u, std::string entity)
     {
         auto &ti_map = views[name];
         using sig = typename FixType<typename CallableInfo<U>::signature>::type;
@@ -1112,6 +1092,29 @@ struct Registrar
             throw conduit::ConduitError("view not registered");
         }
         reinterpret_cast<View<sig> *>(ti_map[new_ti].get())->subscribe(conduit::Function<sig>(u), entity);
+    }
+
+    // NOTE! this operation is not transitive. To alias multiple channels you
+    // must use the same base registrar!
+    void alias(Registrar &reg, std::string name)
+    {
+        BOTCH(map.find(name) == map.end(), "alias channel must already exist");
+        map[name]->alias(reg);
+    }
+
+    void set_debug(bool debug)
+    {
+        for (auto &p : map) {
+            p.second->set_debug(debug);
+        }
+    }
+
+    template <typename C>
+    void visit(C &&c)
+    {
+        for (auto &p : map) {
+            c(*p.second);
+        }
     }
 };
 
