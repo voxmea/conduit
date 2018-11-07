@@ -745,8 +745,9 @@ struct RegistryEntry<R(T...)> final : RegistryEntryBase
 
 struct ViewBase {
     virtual ~ViewBase() {}
+    virtual std::string to_string() const = 0;
     #ifndef CONDUIT_NO_PYTHON
-    virtual subscribe_from_python(pybin11::function, pybind11::str) = 0;
+    virtual void subscribe_from_python(pybind11::function, pybind11::str) = 0;
     #endif
 };
 
@@ -804,10 +805,15 @@ struct View<R(T...)> : ViewBase
         subscribe_function(cb, name);
     }
 
+    std::string to_string() const override
+    {
+        return demangle(typeid(R(T...)).name());
+    }
+
     #ifndef CONDUIT_NO_PYTHON
     void subscribe_from_python(pybind11::function f, pybind11::str entity) override
     {
-        subscribe(f, entity);
+        subscribe([f] (T ...t) {f(t...);}, entity);
     }
     #endif
 };
@@ -930,8 +936,9 @@ struct Registrar
 
     struct PyView
     {
-        std::string entity;
+        std::string name;
         ViewBase *view;
+        void subscribe(pybind11::function f, pybind11::str s) { view->subscribe_from_python(f, s); }
     };
 
     void init_python_bindings()
@@ -943,13 +950,13 @@ struct Registrar
                 .def_readwrite("extra_name", &PyChannel::entity)
                 .def_property("debug", [] (PyChannel &pyc) {return pyc.reb->get_debug();}, [] (PyChannel &pyc, bool debug) {pyc.reb->set_debug(debug);})
                 .def("consumers", [] (PyChannel &pyc) { return pyc.reb->callbacks(); })
-                .def("signature", [] (PyChannel &pyc) { return pyc.reb->to_string(); })
+                .def_property_readonly("signature", [] (const PyChannel &pyc) { return pyc.reb->to_string(); })
                 .def("__call__", [] (PyChannel &pyc, pybind11::args args) {pyc.reb->call_from_python(pyc.entity, args);});
         }
         if (!hasattr(conduit, "View")) {
             pybind11::class_<PyView>(conduit, "View")
-                .def_property_readonly("name", [] (PyView &pyv) {return pyv.view->name();})
-                .def_readwrite("extra_name", &PyView::entity)
+                .def_property_readonly("name", [] (PyView &pyv) { return pyv.name; })
+                .def_property_readonly("signature", [] (const PyView &pyv) { return pyv.view->to_string(); })
                 .def("subscribe", &PyView::subscribe);
         }
         if (!hasattr(conduit, "TraceNode")) {
@@ -992,11 +999,20 @@ struct Registrar
                 });
                 return ret;
             };
+            auto views = [] (Registrar &reg) {
+                std::vector<PyView> ret;
+                for (const auto &map_p : reg.views) {
+                    for (const auto &p : map_p.second) {
+                        ret.push_back(PyView{map_p.first, p.second.get()});
+                    }
+                }
+                return ret;
+            };
             pybind11::class_<Registrar, std::shared_ptr<Registrar>>(conduit, "Registrar")
                 .def("publish", pub)
                 .def("subscribe", sub)
                 .def("channels", channels)
-                .def("views", [] ())
+                .def("views", views)
                 .def("trace", [] (Registrar &reg, pybind11::function func) {
                     reg.tracers.push_back([func] (TraceNode source, TraceNode dest, std::type_index index) {
                         func(source, dest, demangle(index.name()));
@@ -1045,25 +1061,24 @@ struct Registrar
         return static_cast<RegistryEntry<T> &>(*map[name]);
     }
 
-    template <typename sig_, typename chan_sig>
-    void register_view(ChannelInterface<chan_sig> ci, std::string name = "")
+    template <typename Sig_, typename ChanSig>
+    std::string register_view(ChannelInterface<ChanSig> ci, std::string name)
     {
-        if (name.empty()) name = ci.channel->name;
         if (&ci.channel->registrar != this) {
             throw conduit::ConduitError("Registrar mismatch");
         }
-        using sig = typename FixType<sig_>::type;
+        using sig = typename FixType<Sig_>::type;
         auto &ti_map = views[name];
         std::type_index new_ti{typeid(sig)};
         if (ti_map.find(new_ti) == ti_map.end()) {
             ti_map[new_ti] = std::make_unique<View<sig>>(ci);
         }
+        return name;
     }
 
     template <typename Sig_, typename ChanSig, typename Trans>
-    void register_view(ChannelInterface<ChanSig> ci, Trans &&trans, std::string name = "")
+    std::string register_view(ChannelInterface<ChanSig> ci, Trans &&trans, std::string name)
     {
-        if (name.empty()) name = ci.channel->name;
         if (&ci.channel->registrar != this) {
             throw conduit::ConduitError("Registrar mismatch");
         }
@@ -1073,6 +1088,7 @@ struct Registrar
         if (ti_map.find(new_ti) == ti_map.end()) {
             ti_map[new_ti] = std::make_unique<View<Sig>>(ci, std::forward<Trans>(trans));
         }
+        return name;
     }
 
     template <typename T_>
@@ -1084,21 +1100,23 @@ struct Registrar
         auto *channel = &re.channel;
 
         trace(map[name].get(), TraceNode{TraceNode::ENTITY, source}, TraceNode{TraceNode::CHANNEL, name});
-        return ChannelInterface<T>{detail::Names::get_id_for_string(source), channel};
+        auto ci = ChannelInterface<T>{detail::Names::get_id_for_string(source), channel};
+        register_view<T>(ci, name);
+        return ci;
     }
 
     template <typename T, typename U>
     void subscribe(Channel<T> *channel, U &&target, std::string target_name, std::true_type)
     {
         channel->subscribe(std::forward<U>(target), target_name);
-        register_view<typename CallableInfo<std::decay_t<U>>::signature>(ChannelInterface<T>{detail::Names::get_id_for_string(""), channel});
+        register_view<typename CallableInfo<std::decay_t<U>>::signature>(ChannelInterface<T>{detail::Names::get_id_for_string(""), channel}, channel->name);
     }
 
     template <typename T, typename U>
     void subscribe(Channel<T> *channel, U &&target, std::string target_name, std::false_type)
     {
         channel->subscribe(make_changer<T>(std::forward<U>(target)), target_name);
-        register_view<typename CallableInfo<std::decay_t<U>>::signature>(ChannelInterface<T>{detail::Names::get_id_for_string(""), channel});
+        register_view<typename CallableInfo<std::decay_t<U>>::signature>(ChannelInterface<T>{detail::Names::get_id_for_string(""), channel}, channel->name);
     }
 
     template <typename T_, typename U>

@@ -48,8 +48,8 @@ TEST(conduit_changer, basic_view)
     using sig = void(int, double, Foo);
 
     auto ci = reg.publish<sig>("test");
-    reg.register_view<void(int)>(ci);
-    reg.register_view<void(double)>(ci);
+    reg.register_view<void(int)>(ci, ci.name());
+    reg.register_view<void(double)>(ci, ci.name());
 
     int view_int = 0;
     reg.subscribe("test", [&] (int i) {
@@ -71,7 +71,7 @@ TEST(conduit_changer, basic_view)
         ASSERT_TRUE(botched);
     }
 
-    reg.register_view<void(Foo)>(ci);
+    reg.register_view<void(Foo)>(ci, ci.name());
     {
         bool botched = false;
         try {
@@ -96,7 +96,7 @@ TEST(conduit_changer, transformation_view)
     auto ci = reg.publish<sig>("test");
     reg.register_view<void(std::string)>(ci, [] (double d) {
         return std::to_string(d) + " extra test val";
-    });
+    }, ci.name());
 
     std::string trans_str;
     reg.subscribe("test", [&] (const std::string &s) {
@@ -116,7 +116,7 @@ TEST(conduit_changer, tuple_transformation_view)
     auto ci = reg.publish<sig>("test");
     reg.register_view<void(std::string, std::string)>(ci, [] (int i, double d) {
         return std::make_tuple(std::to_string(i), std::to_string(d));
-    });
+    }, ci.name());
 
     std::string trans_str;
     reg.subscribe("test", [&] (const std::string &l, const std::string &r) {
