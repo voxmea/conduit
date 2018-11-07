@@ -744,10 +744,10 @@ struct RegistryEntry<R(T...)> final : RegistryEntryBase
 };
 
 struct ViewBase {
-    std::type_index orig_ti = std::type_index(typeid(void));
-    std::type_index new_ti = std::type_index(typeid(void));
-
     virtual ~ViewBase() {}
+    #ifndef CONDUIT_NO_PYTHON
+    virtual subscribe_from_python(pybin11::function, pybind11::str) = 0;
+    #endif
 };
 
 template <typename ...T> struct View;
@@ -803,6 +803,13 @@ struct View<R(T...)> : ViewBase
     {
         subscribe_function(cb, name);
     }
+
+    #ifndef CONDUIT_NO_PYTHON
+    void subscribe_from_python(pybind11::function f, pybind11::str entity) override
+    {
+        subscribe(f, entity);
+    }
+    #endif
 };
 
 // Allow subset views on a channel through make_changer
@@ -920,12 +927,15 @@ struct Registrar
         std::string entity;
         RegistryEntryBase *reb;
     };
-    #endif
 
-    Registrar(const std::string &n_)
-        : name(n_)
+    struct PyView
     {
-        #ifndef CONDUIT_NO_PYTHON
+        std::string entity;
+        ViewBase *view;
+    };
+
+    void init_python_bindings()
+    {
         pybind11::module conduit = pybind11::reinterpret_borrow<pybind11::module>(PyImport_AddModule("conduit"));
         if (!hasattr(conduit, "Channel")) {
             pybind11::class_<PyChannel>(conduit, "Channel")
@@ -935,6 +945,12 @@ struct Registrar
                 .def("consumers", [] (PyChannel &pyc) { return pyc.reb->callbacks(); })
                 .def("signature", [] (PyChannel &pyc) { return pyc.reb->to_string(); })
                 .def("__call__", [] (PyChannel &pyc, pybind11::args args) {pyc.reb->call_from_python(pyc.entity, args);});
+        }
+        if (!hasattr(conduit, "View")) {
+            pybind11::class_<PyView>(conduit, "View")
+                .def_property_readonly("name", [] (PyView &pyv) {return pyv.view->name();})
+                .def_readwrite("extra_name", &PyView::entity)
+                .def("subscribe", &PyView::subscribe);
         }
         if (!hasattr(conduit, "TraceNode")) {
             auto tn = pybind11::class_<TraceNode>(conduit, "TraceNode")
@@ -980,6 +996,7 @@ struct Registrar
                 .def("publish", pub)
                 .def("subscribe", sub)
                 .def("channels", channels)
+                .def("views", [] ())
                 .def("trace", [] (Registrar &reg, pybind11::function func) {
                     reg.tracers.push_back([func] (TraceNode source, TraceNode dest, std::type_index index) {
                         func(source, dest, demangle(index.name()));
@@ -987,6 +1004,14 @@ struct Registrar
                 })
                 .def_readonly("name", &Registrar::name);
         }
+    }
+    #endif
+
+    Registrar(const std::string &n_)
+        : name(n_)
+    {
+        #ifndef CONDUIT_NO_PYTHON
+        init_python_bindings();
         #endif
     }
 
@@ -1021,13 +1046,14 @@ struct Registrar
     }
 
     template <typename sig_, typename chan_sig>
-    void register_view(ChannelInterface<chan_sig> ci)
+    void register_view(ChannelInterface<chan_sig> ci, std::string name = "")
     {
+        if (name.empty()) name = ci.channel->name;
         if (&ci.channel->registrar != this) {
             throw conduit::ConduitError("Registrar mismatch");
         }
         using sig = typename FixType<sig_>::type;
-        auto &ti_map = views[ci.channel->name];
+        auto &ti_map = views[name];
         std::type_index new_ti{typeid(sig)};
         if (ti_map.find(new_ti) == ti_map.end()) {
             ti_map[new_ti] = std::make_unique<View<sig>>(ci);
@@ -1035,13 +1061,14 @@ struct Registrar
     }
 
     template <typename Sig_, typename ChanSig, typename Trans>
-    void register_view(ChannelInterface<ChanSig> ci, Trans &&trans)
+    void register_view(ChannelInterface<ChanSig> ci, Trans &&trans, std::string name = "")
     {
+        if (name.empty()) name = ci.channel->name;
         if (&ci.channel->registrar != this) {
             throw conduit::ConduitError("Registrar mismatch");
         }
         using Sig = typename FixType<Sig_>::type;
-        auto &ti_map = views[ci.channel->name];
+        auto &ti_map = views[name];
         std::type_index new_ti{typeid(Sig)};
         if (ti_map.find(new_ti) == ti_map.end()) {
             ti_map[new_ti] = std::make_unique<View<Sig>>(ci, std::forward<Trans>(trans));
