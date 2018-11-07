@@ -106,3 +106,23 @@ TEST(conduit_changer, transformation_view)
     ci(10, 3.14);
     ASSERT_EQ(trans_str, (std::to_string(3.14) + " extra test val"));
 }
+
+TEST(conduit_changer, tuple_transformation_view)
+{
+    conduit::Registrar reg("dut");
+
+    using sig = void(int, double);
+
+    auto ci = reg.publish<sig>("test");
+    reg.register_view<void(std::string, std::string)>(ci, [] (int i, double d) {
+        return std::make_tuple(std::to_string(i), std::to_string(d));
+    });
+
+    std::string trans_str;
+    reg.subscribe("test", [&] (const std::string &l, const std::string &r) {
+        trans_str = l + r;
+    }, "test");
+
+    ci(10, 3.14);
+    ASSERT_EQ(trans_str, (std::to_string(10) + std::to_string(3.14)));
+}

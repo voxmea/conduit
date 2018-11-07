@@ -764,12 +764,31 @@ struct View<R(T...)> : ViewBase
         };
     }
 
+    template <typename ...U> struct IsTuple : std::false_type {};
+    template <typename ...U> struct IsTuple<std::tuple<U...>> : std::true_type {};
+
     template <typename U, typename V, typename Ret, typename ...Args>
-    void set_subscribe_function(ChannelInterface<U> ci, V &&v, Ret(*)(Args...))
+    std::enable_if_t<!IsTuple<typename CallableInfo<V>::return_type>::value> set_subscribe_function(ChannelInterface<U> ci, V &&v, Ret(*)(Args...))
     {
         subscribe_function = [=] (conduit::Function<R(T...)> cb, std::string name) {
             ci.channel->registrar.template subscribe<U>(ci, [=] (const Args &...args) {
                 return cb(v(args...));
+            });
+        };
+    }
+
+    template <typename C, typename ...V, std::size_t ...I>
+    decltype(auto) apply(C &&cb, const std::tuple<V...> &v, std::index_sequence<I...>)
+    {
+        return cb(std::get<I>(v)...);
+    }
+
+    template <typename U, typename V, typename Ret, typename ...Args>
+    std::enable_if_t<IsTuple<typename CallableInfo<V>::return_type>::value> set_subscribe_function(ChannelInterface<U> ci, V &&v, Ret(*)(Args...))
+    {
+        subscribe_function = [=] (conduit::Function<R(T...)> cb, std::string name) {
+            ci.channel->registrar.template subscribe<U>(ci, [=] (const Args &...args) {
+                return this->apply(cb, v(args...), std::make_index_sequence<std::tuple_size<typename CallableInfo<V>::return_type>::value>{});
             });
         };
     }
@@ -1091,7 +1110,7 @@ struct Registrar
         if (ti_map.find(new_ti) == ti_map.end()) {
             throw conduit::ConduitError("view not registered");
         }
-        reinterpret_cast<View<sig> *>(ti_map[new_ti].get())->subscribe(conduit::Function<sig>(u), entity);
+        dynamic_cast<View<sig> *>(ti_map[new_ti].get())->subscribe(conduit::Function<sig>(u), entity);
     }
 
     // NOTE! this operation is not transitive. To alias multiple channels you
