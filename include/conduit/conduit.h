@@ -1147,7 +1147,7 @@ struct Registrar
     }
 
     template <typename U>
-    void subscribe(std::string name, U &&u, std::string entity)
+    std::string subscribe(std::string name, U &&u, std::string entity)
     {
         auto &ti_map = views[name];
         using sig = typename FixType<typename CallableInfo<U>::signature>::type;
@@ -1156,6 +1156,7 @@ struct Registrar
             throw conduit::ConduitError("view not registered");
         }
         dynamic_cast<View<sig> *>(ti_map[new_ti].get())->subscribe(conduit::Function<sig>(u), entity);
+        return entity;
     }
 
     // NOTE! this operation is not transitive. To alias multiple channels you
