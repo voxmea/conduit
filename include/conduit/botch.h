@@ -114,6 +114,7 @@ struct Botch {
 } // namespace botch
 } // namespace detail
 
+#ifndef BOTCH
 #define BOTCH(test, ...)                                      \
     do {                                                      \
         if ((test)) {                                         \
@@ -122,6 +123,7 @@ struct Botch {
         }                                                     \
     } while (0)
 
+#endif
 #endif
 
 #endif
