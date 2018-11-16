@@ -492,6 +492,14 @@ public:
 };
 }
 
+#ifndef CONDUIT_NO_PYTHON
+#include <pybind11/stl.h>
+namespace pybind11 { namespace detail {
+template <typename T, size_t MAX, bool DEFAULT_CONSTRUCT> struct type_caster<conduit::FixVec<T, MAX, DEFAULT_CONSTRUCT>>
+ : list_caster<conduit::FixVec<T, MAX, DEFAULT_CONSTRUCT>, T> { };
+}}
+#endif
+
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
