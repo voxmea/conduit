@@ -348,7 +348,7 @@ private:
     using CallbackReturn = typename std::conditional<std::is_same<R, void>::value, void, conduit::Optional<R>>::type;
     struct Callback
     {
-        std::function<CallbackReturn(const T &...)> cb;
+        conduit::Function<CallbackReturn(T ...)> cb;
         std::string name;
         int group;
     };
@@ -357,7 +357,7 @@ private:
     using ResolveFunctionType = typename std::conditional<std::is_same<R, void>::value, void(), void(const std::vector<conduit::Optional<R>>)>::type;
     struct Resolve
     {
-        std::function<ResolveFunctionType> cb;
+        conduit::Function<ResolveFunctionType> cb;
         std::string name;
         int group;
     };
@@ -390,13 +390,13 @@ private:
         auto iter = std::upper_bound(callbacks->begin(), callbacks->end(), group, [] (int group, const Callback &cb) {
             return group < cb.group;
         });
-        callbacks->insert(iter, Callback{c, client_name, group});
+        callbacks->insert(iter, Callback{std::forward<C>(c), client_name, group});
     }
 
     template <typename C>
     void subscribe_(C &&c, const std::string &client_name, int group, detail::ConvertibleReturnTypeTag)
     {
-        auto capture = c;
+        auto capture = std::forward<C>(c);
         auto iter = std::upper_bound(callbacks->begin(), callbacks->end(), group, [] (int group, const Callback &cb) {
             return group < cb.group;
         });
@@ -406,7 +406,7 @@ private:
     template <typename C>
     void subscribe_(C &&c, const std::string &client_name, int group, detail::OptionalNullTypeTag)
     {
-        auto capture = c;
+        auto capture = std::forward<C>(c);
         auto iter = std::upper_bound(callbacks->begin(), callbacks->end(), group, [] (int group, const Callback &cb) {
             return group < cb.group;
         });

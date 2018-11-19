@@ -7,6 +7,7 @@
 #include <memory>
 #include <cstddef>
 #include <cstdlib>
+#include <type_traits>
 
 namespace conduit
 {
@@ -22,10 +23,22 @@ class Function<R(A...), BUF_SIZE>
     void *buf = nullptr;
     typename std::aligned_storage<BUF_SIZE, alignof(std::max_align_t)>::type internal_storage;
 
+    template <typename T, typename Ret = R>
+    std::enable_if_t<std::is_same<Ret, void>::value> setup_call()
+    {
+        call = [] (void *buf, A ...a) -> Ret { (*(T *)buf)(a...);};
+    }
+
+    template <typename T, typename Ret = R>
+    std::enable_if_t<!std::is_same<Ret, void>::value> setup_call()
+    {
+        call = [] (void *buf, A ...a) -> Ret { return (*(T *)buf)(a...);};
+    }
+
     template <typename T>
     void setup()
     {
-        call = [] (void *buf, A ...a) -> R {return (*(T *)buf)(std::forward<A>(a)...);};
+        setup_call<T>();
         destruct = [] (void *buf) {(*(T *)buf).~T();};
         clone = [] (Function *dst, const Function *src) {
             if (src->buf == nullptr) {
@@ -86,6 +99,7 @@ public:
     {
         if (this == &o)
             return *this;
+
         this->~Function();
 
         call = o.call;

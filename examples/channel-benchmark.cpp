@@ -56,6 +56,20 @@ static void modified_subscriber(benchmark::State &state)
 }
 BENCHMARK(modified_subscriber);
 
+static void view_unmodified_subscriber(benchmark::State &state)
+{
+    Registrar reg("dut");
+    reg.subscribe("test", [] (int i, int j) {
+        benchmark::DoNotOptimize(i);
+        benchmark::DoNotOptimize(j);
+    }, "dut");
+    auto ci = reg.publish<void(int, int)>("test", "dut");
+    for (auto _ : state) {
+        ci(dist(gen), dist(gen));
+    }
+}
+BENCHMARK(view_unmodified_subscriber);
+
 static void __attribute__ ((noinline)) noinline_func(int i, int j) {
     benchmark::DoNotOptimize(i);
     benchmark::DoNotOptimize(j);
