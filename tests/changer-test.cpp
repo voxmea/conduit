@@ -63,12 +63,9 @@ TEST(conduit_changer, basic_view)
 
     {
         bool botched = false;
-        try {
-            reg.subscribe("test", [&] (Foo) { }, "test");
-        } catch (const conduit::ConduitError &) {
-            botched = true;
-        }
-        ASSERT_TRUE(botched);
+        ASSERT_TRUE(reg.pending_views.size() == 0);
+        reg.subscribe("test", [&] (Foo) { }, "test");
+        ASSERT_TRUE(reg.pending_views.size() == 1);
     }
 
     reg.register_view<void(Foo)>(ci, ci.name());
@@ -122,7 +119,37 @@ TEST(conduit_changer, tuple_transformation_view)
     reg.subscribe("test", [&] (const std::string &l, const std::string &r) {
         trans_str = l + r;
     }, "test");
+    
+    reg.register_view<void(std::string, std::string)>(ci, [] (int i, double d) {
+        return std::make_tuple(std::to_string(i), std::to_string(d));
+    }, ci.name());
 
     ci(10, 3.14);
     ASSERT_EQ(trans_str, (std::to_string(10) + std::to_string(3.14)));
+}
+
+TEST(conduit_changer, pending_subscribe)
+{
+    conduit::Registrar reg("dut");
+
+    using sig = void(int);
+
+    int int_val = 0;
+    reg.subscribe("test", [&int_val] (int i) { int_val = i; }, "test");
+    bool bool_val = false;
+    reg.subscribe("test", [&bool_val] { bool_val = true; }, "test");
+
+    auto ci = reg.publish<void(int)>("test", "test");
+    ci(10);
+    ASSERT_EQ(int_val, 10);
+    ASSERT_EQ(bool_val, false);
+    ASSERT_EQ(reg.pending_views.size(), 1);
+    ASSERT_EQ(reg.pending_views["test"].size(), 1);
+
+    reg.register_view<void()>(ci, "test");
+    ci(20);
+    ASSERT_EQ(int_val, 20);
+    ASSERT_EQ(bool_val, true);
+    ASSERT_EQ(reg.pending_views.size(), 1);
+    ASSERT_EQ(reg.pending_views["test"].size(), 0);
 }

@@ -743,7 +743,10 @@ struct RegistryEntry<R(T...)> final : RegistryEntryBase
     #endif
 };
 
-struct ViewBase {
+struct ViewBase
+{
+    std::type_index ti;
+    ViewBase(std::type_index ti) : ti(ti) {}
     virtual ~ViewBase() {}
     virtual std::string to_string() const = 0;
     #ifndef CONDUIT_NO_PYTHON
@@ -756,14 +759,6 @@ template <typename R, typename ...T>
 struct View<R(T...)> : ViewBase
 {
     conduit::Function<void(conduit::Function<R(T...)>, std::string)> subscribe_function;
-
-    template <typename U>
-    View(ChannelInterface<U> ci)
-    {
-        subscribe_function = [=] (conduit::Function<R(T...)> cb, std::string name) {
-            ci.channel->registrar.template subscribe<U>(ci, cb, name);
-        };
-    }
 
     template <typename ...U> struct IsTuple : std::false_type {};
     template <typename ...U> struct IsTuple<std::tuple<U...>> : std::true_type {};
@@ -794,8 +789,16 @@ struct View<R(T...)> : ViewBase
         };
     }
 
+    template <typename U>
+    View(ChannelInterface<U> ci) : ViewBase(typeid(R(T...)))
+    {
+        subscribe_function = [=] (conduit::Function<R(T...)> cb, std::string name) {
+            ci.channel->registrar.template subscribe<U>(ci, cb, name);
+        };
+    }
+
     template <typename U, typename V>
-    View(ChannelInterface<U> ci, V &&v)
+    View(ChannelInterface<U> ci, V &&v) : ViewBase(typeid(R(T...)))
     {
         set_subscribe_function(ci, std::forward<V>(v), typename CallableInfo<V>::function_type{nullptr});
     }
@@ -805,10 +808,7 @@ struct View<R(T...)> : ViewBase
         subscribe_function(cb, name);
     }
 
-    std::string to_string() const override
-    {
-        return demangle(typeid(R(T...)).name());
-    }
+    std::string to_string() const override { return demangle(typeid(R(T...)).name()); }
 
     #ifndef CONDUIT_NO_PYTHON
     void subscribe_from_python(pybind11::function f, pybind11::str entity) override
@@ -817,6 +817,44 @@ struct View<R(T...)> : ViewBase
     }
     #endif
 };
+
+struct PendingViewBase
+{
+    // opt_ti will stay un-engaged if the pending view is from Python
+    conduit::Optional<std::type_index> opt_ti;
+    std::string entity;
+    PendingViewBase(conduit::Optional<std::type_index> opt_ti, std::string entity) : opt_ti(opt_ti), entity(entity) {}
+    virtual void subscribe(ViewBase &view) = 0;
+    virtual ~PendingViewBase() {};
+};
+
+template <typename ...T> struct PendingView;
+template <typename R, typename ...T>
+struct PendingView<R(T...)> : PendingViewBase
+{
+    conduit::Function<R(T...)> cb;
+    PendingView(conduit::Function<R(T...)> cb_, std::string entity_) : PendingViewBase(typeid(R(T...)), entity_), cb(cb_) {}
+
+    void subscribe(ViewBase &view) override
+    {
+        dynamic_cast<View<R(T...)> &>(view).subscribe(cb, entity);
+    }
+};
+
+#ifndef CONDUIT_NO_PYTHON
+struct PythonPendingHolderTag {};
+template <>
+struct PendingView<PythonPendingHolderTag> : PendingViewBase
+{
+    pybind11::function func;
+    PendingView(pybind11::function func_, std::string entity_) : PendingViewBase(OptionalNull(), entity_), func(func_) {}
+
+    void subscribe(ViewBase &view) override
+    {
+        view.subscribe_from_python(func, entity);
+    }
+};
+#endif
 
 // Allow subset views on a channel through make_changer
 
@@ -908,6 +946,7 @@ struct Registrar
     std::string name;
     std::unordered_map<std::string, std::unique_ptr<RegistryEntryBase>> map;
     std::unordered_map<std::string, std::unordered_map<std::type_index, std::unique_ptr<ViewBase>>> views;
+    std::unordered_map<std::string, std::vector<std::unique_ptr<PendingViewBase>>> pending_views;
 
     struct TraceNode
     {
@@ -1061,18 +1100,41 @@ struct Registrar
         return static_cast<RegistryEntry<T> &>(*map[name]);
     }
 
+    // TODO: fix the recursive loop so that swap(pending_views, copy) isn't necessary
+    void match_pending_views(std::string name)
+    {
+        if (pending_views.find(name) == pending_views.end())
+            return;
+        decltype(pending_views) copy;
+        using std::swap;
+        swap(pending_views, copy);;
+        auto &pending_vec = copy[name];
+        pending_vec.erase(pending_vec.begin(), std::partition(pending_vec.begin(), pending_vec.end(), [this, &name] (auto &pending) {
+            bool ret = false;
+            for (auto &pr : views[name]) {
+                if (!pending->opt_ti.engaged() || *pending->opt_ti == pr.first) {
+                    pending->subscribe(*pr.second);
+                    ret = true;
+                }
+            }
+            return ret;
+        }));
+        swap(copy, pending_views);
+    }
+
     template <typename Sig_, typename ChanSig>
     std::string register_view(ChannelInterface<ChanSig> ci, std::string name)
     {
         if (&ci.channel->registrar != this) {
             throw conduit::ConduitError("Registrar mismatch");
         }
-        using sig = typename FixType<Sig_>::type;
+        using Sig = typename FixType<Sig_>::type;
         auto &ti_map = views[name];
-        std::type_index new_ti{typeid(sig)};
+        std::type_index new_ti{typeid(Sig)};
         if (ti_map.find(new_ti) == ti_map.end()) {
-            ti_map[new_ti] = std::make_unique<View<sig>>(ci);
+            ti_map[new_ti] = std::make_unique<View<Sig>>(ci);
         }
+        match_pending_views(ci.name());
         return name;
     }
 
@@ -1087,7 +1149,11 @@ struct Registrar
         std::type_index new_ti{typeid(Sig)};
         if (ti_map.find(new_ti) == ti_map.end()) {
             ti_map[new_ti] = std::make_unique<View<Sig>>(ci, std::forward<Trans>(trans));
+        } else {
+            CONDUIT_LOGGER << "WARNING: resetting view " << conduit::demangle(ci.name().c_str()) << ":" << typeid(Sig).name() << '\n';
+            ti_map[new_ti] = std::make_unique<View<Sig>>(ci, std::forward<Trans>(trans));
         }
+        match_pending_views(ci.name());
         return name;
     }
 
@@ -1150,14 +1216,31 @@ struct Registrar
     std::string subscribe(std::string name, U &&u, std::string entity)
     {
         auto &ti_map = views[name];
-        using sig = typename FixType<typename CallableInfo<U>::signature>::type;
-        std::type_index new_ti{typeid(sig)};
+        using Sig = typename FixType<typename CallableInfo<U>::signature>::type;
+        std::type_index new_ti{typeid(Sig)};
         if (ti_map.find(new_ti) == ti_map.end()) {
-            throw conduit::ConduitError("view not registered");
+            pending_views[name].emplace_back(std::make_unique<PendingView<Sig>>(u, entity));
+        } else {
+            dynamic_cast<View<Sig> *>(ti_map[new_ti].get())->subscribe(conduit::Function<Sig>(u), entity);
         }
-        dynamic_cast<View<sig> *>(ti_map[new_ti].get())->subscribe(conduit::Function<sig>(u), entity);
         return entity;
     }
+
+    #ifndef CONDUIT_NO_PYTHON
+    std::string subscribe(std::string name, pybind11::function func, std::string entity)
+    {
+        if (views.find(name) == views.end()) {
+            pending_views[name].emplace_back(std::make_unique<PendingView<PythonPendingHolderTag>>(func, entity));
+            return entity;
+        }
+
+        auto &ti_map = views[name];
+        for (auto &[ti, view_ptr] : ti_map) {
+            view_ptr->subscribe_from_python(func, entity);
+        }
+        return entity;
+    }
+    #endif
 
     // NOTE! this operation is not transitive. To alias multiple channels you
     // must use the same base registrar!
