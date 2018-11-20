@@ -348,7 +348,7 @@ private:
     using CallbackReturn = typename std::conditional<std::is_same<R, void>::value, void, conduit::Optional<R>>::type;
     struct Callback
     {
-        conduit::Function<CallbackReturn(T ...)> cb;
+        conduit::Function<CallbackReturn(const T &...)> cb;
         std::string name;
         int group;
     };
@@ -758,7 +758,7 @@ template <typename ...T> struct View;
 template <typename R, typename ...T>
 struct View<R(T...)> : ViewBase
 {
-    conduit::Function<void(conduit::Function<R(T...)>, std::string)> subscribe_function;
+    conduit::Function<void(conduit::Function<R(const T &...)>, std::string)> subscribe_function;
 
     template <typename ...U> struct IsTuple : std::false_type {};
     template <typename ...U> struct IsTuple<std::tuple<U...>> : std::true_type {};
@@ -766,7 +766,7 @@ struct View<R(T...)> : ViewBase
     template <typename U, typename V, typename Ret, typename ...Args>
     std::enable_if_t<!IsTuple<typename CallableInfo<V>::return_type>::value> set_subscribe_function(ChannelInterface<U> ci, V &&v, Ret(*)(Args...))
     {
-        subscribe_function = [=] (conduit::Function<R(T...)> cb, std::string name) {
+        subscribe_function = [=] (conduit::Function<R(const T &...)> cb, std::string name) {
             ci.channel->registrar.template subscribe<U>(ci, [=] (const Args &...args) {
                 return cb(v(args...));
             });
@@ -782,7 +782,7 @@ struct View<R(T...)> : ViewBase
     template <typename U, typename V, typename Ret, typename ...Args>
     std::enable_if_t<IsTuple<typename CallableInfo<V>::return_type>::value> set_subscribe_function(ChannelInterface<U> ci, V &&v, Ret(*)(Args...))
     {
-        subscribe_function = [=] (conduit::Function<R(T...)> cb, std::string name) {
+        subscribe_function = [=] (conduit::Function<R(const T &...)> cb, std::string name) {
             ci.channel->registrar.template subscribe<U>(ci, [=] (const Args &...args) {
                 return this->apply(cb, v(args...), std::make_index_sequence<std::tuple_size<typename CallableInfo<V>::return_type>::value>{});
             });
@@ -792,7 +792,7 @@ struct View<R(T...)> : ViewBase
     template <typename U>
     View(ChannelInterface<U> ci) : ViewBase(typeid(R(T...)))
     {
-        subscribe_function = [=] (conduit::Function<R(T...)> cb, std::string name) {
+        subscribe_function = [=] (conduit::Function<R(const T &...)> cb, std::string name) {
             ci.channel->registrar.template subscribe<U>(ci, cb, name);
         };
     }
@@ -803,7 +803,7 @@ struct View<R(T...)> : ViewBase
         set_subscribe_function(ci, std::forward<V>(v), typename CallableInfo<V>::function_type{nullptr});
     }
 
-    void subscribe(conduit::Function<R(T...)> cb, std::string name)
+    void subscribe(conduit::Function<R(const T &...)> cb, std::string name)
     {
         subscribe_function(cb, name);
     }
@@ -832,8 +832,8 @@ template <typename ...T> struct PendingView;
 template <typename R, typename ...T>
 struct PendingView<R(T...)> : PendingViewBase
 {
-    conduit::Function<R(T...)> cb;
-    PendingView(conduit::Function<R(T...)> cb_, std::string entity_) : PendingViewBase(typeid(R(T...)), entity_), cb(cb_) {}
+    conduit::Function<R(const T &...)> cb;
+    PendingView(conduit::Function<R(const T &...)> cb_, std::string entity_) : PendingViewBase(typeid(R(T...)), entity_), cb(cb_) {}
 
     void subscribe(ViewBase &view) override
     {
@@ -907,7 +907,7 @@ namespace changer_detail
         using seq = typename Matcher<0, type_list<T...>, type_list<U...>>::seq;
         static_assert(std::is_same<type, type_list<U...>>::value, "incompatible mapping");
 
-        conduit::Function<R(U...)> f;
+        conduit::Function<R(const U &...)> f;
 
         template <typename ...V, int ...I>
         R apply(const std::tuple<V...> &v, int_seq<I...>)
@@ -1221,7 +1221,7 @@ struct Registrar
         if (ti_map.find(new_ti) == ti_map.end()) {
             pending_views[name].emplace_back(std::make_unique<PendingView<Sig>>(u, entity));
         } else {
-            dynamic_cast<View<Sig> *>(ti_map[new_ti].get())->subscribe(conduit::Function<Sig>(u), entity);
+            dynamic_cast<View<Sig> *>(ti_map[new_ti].get())->subscribe(u, entity);
         }
         return entity;
     }

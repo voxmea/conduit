@@ -4,6 +4,7 @@
 #define CONDUIT_SOURCE_STRING_INTERNING
 #include <conduit/conduit.h>
 #include <random>
+#include <vector>
 
 using namespace conduit;
 
@@ -100,5 +101,19 @@ static void virtual_function(benchmark::State &state)
     delete v;
 }
 BENCHMARK(virtual_function);
+
+static void large_heap(benchmark::State &state)
+{
+    std::vector<int> vec(1024*1024, 1);
+    Registrar reg("dut");
+    reg.subscribe<void(std::vector<int>)>("test", [] (const std::vector<int> &vec) {
+        benchmark::DoNotOptimize(vec.data());
+    }, "dut");
+    auto ci = reg.publish<void(std::vector<int>)>("test", "dut");
+    for (auto _ : state) {
+        ci(vec);
+    }
+}
+BENCHMARK(large_heap);
 
 BENCHMARK_MAIN();
