@@ -1334,6 +1334,84 @@ std::string subscribe(C &&callback, std::string name, U ...u)
     return name;
 }
 
+template <typename T>
+struct Observable
+{
+    // https://en.cppreference.com/w/cpp/types/void_t
+    template<typename... Ts> struct make_void { typedef void type; };
+    template<typename... Ts> using void_t = typename make_void<Ts...>::type;
+
+    #define HAS_EXPRESSION(name, ...) \
+        template <typename, typename = void_t<>> struct has_##name : std::false_type { using return_type = void; }; \
+        template <typename U> struct has_##name<U, void_t<decltype(__VA_ARGS__)>> : std::true_type { using return_type = decltype(__VA_ARGS__); };
+
+    struct Observer
+    {
+        Observable &ob;
+        Observer(Observable &ob_) : ob(ob_) {}
+        Observer(const Observer &) = default;
+        ~Observer() { ob.cb(ob.t); }
+        T &operator *() { return ob.t; }
+        T *operator ->() { return &ob.t; }
+        const T *operator ->() const { return &ob.t; }
+        operator const T &() const { return ob.read(); }
+        Observer &operator =(const T &o) { ob.t = o; return *this; }
+
+        HAS_EXPRESSION(subscript_operator, std::declval<U&>()[0])
+        template <typename U = T>
+        std::enable_if_t<has_subscript_operator<U>::value, typename has_subscript_operator<U>::return_type> operator [](size_t index)
+        {
+            return ob.t[index];
+        }
+
+        HAS_EXPRESSION(pre_increment_operator, ++std::declval<U&>())
+        template <typename U = T>
+        std::enable_if_t<has_pre_increment_operator<U>::value, typename has_pre_increment_operator<U>::return_type> operator ++()
+        {
+            return ++ob.t;
+        }
+
+        HAS_EXPRESSION(pre_decrement_operator, --std::declval<U&>())
+        template <typename U = T>
+        std::enable_if_t<has_pre_decrement_operator<U>::value, typename has_pre_decrement_operator<U>::return_type> operator --()
+        {
+            return --ob.t;
+        }
+    };
+    friend Observer;
+
+    template <typename U, typename V = T>
+    Observable(U &&u, std::enable_if_t<std::is_default_constructible<V>::value, char> * = nullptr) : cb(std::forward<U>(u)) {}
+
+    template <typename U, typename V>
+    Observable(U &&u, V &&v) : cb(std::forward<U>(u)), t(std::forward<V>(v)) {}
+
+    template <typename U = T>
+    Observable(Registrar &reg, std::string channel_name, std::string entity_name, std::enable_if_t<std::is_default_constructible<U>::value, char> * = nullptr)
+        : cb(reg.publish<void(T)>(channel_name, entity_name))
+    {}
+
+    // not copyable or assignable, because we're not including those as observable
+    Observable(const Observable &) = delete;
+    Observable &operator =(const Observable &) = delete;
+
+    const T &read() const { return t; }
+    Observer write() { return Observer(*this); }
+    Observer operator *() { return Observer(*this); }
+    Observer operator ->() { return Observer(*this); }
+
+    HAS_EXPRESSION(begin, std::begin(std::declval<U&>()))
+    template <typename U = T>
+    friend std::enable_if_t<has_begin<U>::value, typename has_begin<U>::return_type> begin(Observable &ob) { return std::begin(ob.t); }
+    HAS_EXPRESSION(end, std::end(std::declval<U&>()))
+    template <typename U = T>
+    friend std::enable_if_t<has_end<U>::value, typename has_end<U>::return_type> end(Observable &ob) { return std::end(ob.t); }
+
+private:
+    conduit::Function<void(const T &)> cb;
+    T t;
+};
+
 #define conduit_run_expand_(x, y) x ## y
 #define conduit_run_expand(x, y) conduit_run_expand_(x, y)
 #define conduit_run(...) std::string conduit_run_expand(conduit_unique_mem_subscribe_id_, __COUNTER__) = __VA_ARGS__
