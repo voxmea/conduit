@@ -769,7 +769,7 @@ struct View<R(T...)> : ViewBase
         subscribe_function = [=] (conduit::Function<R(const T &...)> cb, std::string name) {
             ci.channel->registrar.template subscribe<U>(ci, [=] (const Args &...args) {
                 return cb(v(args...));
-            });
+            }, name);
         };
     }
 
@@ -785,7 +785,7 @@ struct View<R(T...)> : ViewBase
         subscribe_function = [=] (conduit::Function<R(const T &...)> cb, std::string name) {
             ci.channel->registrar.template subscribe<U>(ci, [=] (const Args &...args) {
                 return this->apply(cb, v(args...), std::make_index_sequence<std::tuple_size<typename CallableInfo<V>::return_type>::value>{});
-            });
+            }, name);
         };
     }
 
