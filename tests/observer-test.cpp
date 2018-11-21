@@ -4,6 +4,9 @@
 #define CONDUIT_SOURCE_STRING_INTERNING
 #include <conduit/conduit.h>
 #include <gtest/gtest.h>
+#include <string>
+#include <algorithm>
+#include <locale>
 
 using namespace conduit;
 
@@ -94,8 +97,29 @@ TEST(conduit_observer, subscript_operator)
 
     for (auto &i : vec_ob) {
         ASSERT_EQ(i, 10);
+    }
+    ASSERT_EQ(observed_push_back, 10);
+    for (auto &i : *vec_ob) {
+        ASSERT_EQ(i, 10);
         i = 20;
         ASSERT_EQ(vec_ob.read()[0], 20);
     }
-    ASSERT_EQ(observed_push_back, 10);
+    ASSERT_EQ(observed_push_back, 20);
+}
+
+struct Callable
+{
+    void operator ()(int &i) { i = 20; }
+    int operator ()() { return 10; }
+    std::string operator()(std::string s) { std::transform(s.begin(), s.end(), s.begin(), ::tolower); return s; }
+};
+TEST(conduit_observer, call_operator)
+{
+    Observable<Callable> call_ob{[] (auto &callable) { }};
+    auto s = (*call_ob)("QWER");
+    ASSERT_EQ(s, "qwer");
+    int i = 10;
+    (*call_ob)(i);
+    ASSERT_EQ(i, 20);
+    ASSERT_EQ((*call_ob)(), 10);
 }
