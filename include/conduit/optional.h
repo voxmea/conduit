@@ -76,7 +76,7 @@ struct Optional {
     {
         if (engaged_) new (&buf) T(*o);
     }
-    Optional(Optional &&o) : engaged_(o.engaged_)
+    Optional(Optional &&o) noexcept(std::is_nothrow_move_constructible<T>::value) : engaged_(o.engaged_)
     {
         if (engaged_) {
             new (&buf) T(std::move(*o));
@@ -107,7 +107,7 @@ struct Optional {
         return *this;
     }
 
-    Optional &operator=(Optional &&o)
+    Optional &operator=(Optional &&o) noexcept(std::is_nothrow_move_constructible<T>::value)
     {
         if (this == &o)
             return *this;
@@ -166,6 +166,13 @@ struct Optional {
     {
         BOTCH(!engaged_, "accessing unset optional");
         return reinterpret_cast<const T *>(&buf);
+    }
+
+    friend void swap(Optional &left, Optional &right) noexcept(std::is_nothrow_move_constructible<T>::value)
+    {
+        Optional tmp(std::move(left));
+        left = std::move(right);
+        right = std::move(tmp);
     }
 };
 
