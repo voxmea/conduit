@@ -9,11 +9,11 @@
 #include <type_traits>
 
 namespace conduit {
-template <typename... T>
-struct CallableInfo;
+template <typename T, typename = detail::void_t<>> struct CallableInfo;
 
 template <typename R, typename... T>
-struct CallableInfo<R(T...)> {
+struct CallableInfo<R(T...)>
+{
     using return_type = R;
     using tuple_parameter_type = std::tuple<std::decay_t<T>...>;
     using seq_type = std::index_sequence_for<T...>;
@@ -22,7 +22,8 @@ struct CallableInfo<R(T...)> {
 };
 
 template <typename C, typename R, typename... T>
-struct CallableInfo<R (C::*)(T...)> {
+struct CallableInfo<R (C::*)(T...)>
+{
     using return_type = R;
     using tuple_parameter_type = std::tuple<std::decay_t<T>...>;
     using seq_type = std::index_sequence_for<T...>;
@@ -31,7 +32,8 @@ struct CallableInfo<R (C::*)(T...)> {
 };
 
 template <typename C, typename R, typename... T>
-struct CallableInfo<R (C::*)(T...) const> {
+struct CallableInfo<R (C::*)(T...) const>
+{
     using return_type = R;
     using tuple_parameter_type = std::tuple<std::decay_t<T>...>;
     using seq_type = std::index_sequence_for<T...>;
@@ -40,7 +42,8 @@ struct CallableInfo<R (C::*)(T...) const> {
 };
 
 template <typename R, typename... T>
-struct CallableInfo<R (*)(T...)> {
+struct CallableInfo<R (*)(T...)>
+{
     using return_type = R;
     using tuple_parameter_type = std::tuple<std::decay_t<T>...>;
     using seq_type = std::index_sequence_for<T...>;
@@ -49,7 +52,8 @@ struct CallableInfo<R (*)(T...)> {
 };
 
 template <typename T_>
-struct CallableInfo<T_> {
+struct CallableInfo<T_, detail::void_t<decltype(&std::decay_t<T_>::operator ())>>
+{
     using T = std::decay_t<T_>;
     using operator_call_type = decltype(&T::operator());
     using return_type = typename CallableInfo<operator_call_type>::return_type;
