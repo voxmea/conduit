@@ -1019,7 +1019,7 @@ struct Registrar
                 reg.trace(reb.get(), TraceNode{TraceNode::ENTITY, static_cast<std::string>(source)}, TraceNode{TraceNode::CHANNEL, n});
                 return PyChannel{static_cast<std::string>(source), reb.get()};
             };
-            auto sub = [] (Registrar &reg, pybind11::str n_, pybind11::function func, pybind11::str target) {
+            auto sub = [] (Registrar &reg, pybind11::str n_, pybind11::function func, pybind11::str target, int group) {
                 std::string n = n_;
                 if (reg.map.find(n) == reg.map.end()) {
                     std::ostringstream stream;
@@ -1027,7 +1027,7 @@ struct Registrar
                     throw pybind11::index_error(stream.str());
                 }
                 auto &reb = reg.map[n];
-                reb->add_python_callback(func, target);
+                reb->add_python_callback(func, target, group);
                 reg.trace(reb.get(), TraceNode{TraceNode::CHANNEL, n}, TraceNode{TraceNode::ENTITY, target});
                 return target;
             };
@@ -1049,7 +1049,8 @@ struct Registrar
             };
             pybind11::class_<Registrar, std::shared_ptr<Registrar>>(conduit, "Registrar")
                 .def("publish", pub)
-                .def("subscribe", sub)
+                .def("subscribe", sub, "subscribe to a channel",
+                     pybind11::arg("name"), pybind11::arg("callback"), pybind11::arg("entity"), pybind11::arg("group") = 0)
                 .def("channels", channels)
                 .def("views", views)
                 .def("trace", [] (Registrar &reg, pybind11::function func) {
