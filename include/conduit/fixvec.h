@@ -16,6 +16,7 @@
 #include <utility>
 #include <memory>
 #include <cassert>
+#include <vector>
 
 #ifdef USE_FIXVEC_POOL
 #include <vector>
@@ -349,15 +350,15 @@ public:
         erase(begin(), end());
     }
 
-    void push_back(const T &val)
+    T &push_back(const T &val)
     {
         assert(num < MAX);
-        new (data + num++) T(val);
+        return *new (data + num++) T(val);
     }
-    void push_back(T &&val)
+    T &push_back(T &&val)
     {
         assert(num < MAX);
-        new (data + num++) T(std::move(val));
+        return *new (data + num++) T(std::move(val));
     }
     void pop_back()
     {
@@ -366,10 +367,10 @@ public:
     }
 
     template <typename... U>
-    void emplace_back(U &&... u)
+    T &emplace_back(U &&... u)
     {
         assert(num < MAX);
-        new (data + num++) T(std::forward<U>(u)...);
+        return *new (data + num++) T(std::forward<U>(u)...);
     }
 
     iterator insert(iterator pos, T t)
