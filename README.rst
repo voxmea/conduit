@@ -21,8 +21,6 @@ The source for these tests can be found `here (conduit)`__ and `here (signals)`_
 
     g++-6 -std=c++14 -O3 -o conduit-test conduit-test.cpp -I .../conduit/include -D CONDUIT_NO_LUA
 
-__ https://github.qualcomm.com/roanoke/conduit-test/blob/master/examples/conduit-simple-speed-test.cpp
-__ https://github.qualcomm.com/roanoke/conduit-test/blob/master/examples/boost-signals-simple-speed-test.cpp
 
 And, while this example doesn't make use of the conduit/Lua integration for simplicity, there is no speed cost with including the Lua bridge.
 
@@ -38,7 +36,7 @@ The producer code:
 .. code:: c++
 
     // First get access to the channel
-    auto channel = reg.lookup<void(std::string)>("hello world channel");
+    auto channel = reg.publish<void(std::string)>("hello world channel");
     // Now send a message on the channel
     channel("hello, world!");
 
@@ -47,9 +45,9 @@ The consumer code:
 
 .. code:: c++
 
-    reg.lookup<void(std::string)>("hello world channel").hook([] (std::string s) {
+    reg.subscribe<void(std::string)>("hello world channel", [] (std::string s) {
         std::cout << s << std::endl;
-    });
+    }));
 
 Channels are fast, just slightly slower (~25%) compared to virtual functions, but provide many benefits (N-to-M messaging, identifiable communication, decoupled communication, automatic debugging, etc.). Use channels liberally.
 
@@ -67,10 +65,6 @@ TODO - expand on each feature.
 Examples
 --------
 
-Examples of using conduit can be found in the conduit-test project here: https://github.qualcomm.com/roanoke/conduit-test
-
-For example, the conduit hello-world can be found here: https://github.qualcomm.com/roanoke/conduit-test/blob/master/examples/hello-world.cpp
-
-Or, the conduit-speed-test, which is the test we use to judge conduit's performance against virtual functions and other type-erased callables: https://github.qualcomm.com/roanoke/conduit-test/blob/master/test/conduit-speed-test.cpp
+A basic example of using conduit can be found in examples/conduit-example.cpp
 
 
