@@ -92,7 +92,7 @@ struct TupleCat<std::tuple<T...>, std::tuple<U...>, V...> {
 inline std::string demangle(const char *name)
 {
     int status = 0;
-    auto s = abi::__cxa_demangle(name, nullptr, 0, &status);
+    auto s = abi::__cxa_demangle(name, nullptr, nullptr, &status);
     if (status != 0) {
         return name;
     }

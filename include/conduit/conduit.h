@@ -227,7 +227,7 @@ struct Channel<R(T...)> final : public ChannelBase
             c.cb(t...);
         }
         in_callbacks = false;
-        if (pending_unsubscribe.size())
+        if (!pending_unsubscribe.empty())
             unsubscribe_();
 
         #ifdef CONDUIT_CHANNEL_TIMES
@@ -254,15 +254,15 @@ struct Channel<R(T...)> final : public ChannelBase
             ret.emplace_back(c.cb(t...));
         }
         in_callbacks = false;
-        if (pending_unsubscribe.size())
+        if (!pending_unsubscribe.empty())
             unsubscribe_();
 
-        if (resolves->size()) {
+        if (!resolves->empty()) {
             in_resolves = true;
             for (auto &r : *resolves)
                 r.cb(ret);
             in_resolves = false;
-            if (pending_unresolve.size())
+            if (!pending_unresolve.empty())
                 unresolve_();
         }
 
@@ -1088,7 +1088,6 @@ struct Registrar
     RegistryEntry<T> &find(const std::string &name)
     {
         auto ti = std::type_index(typeid(T));
-        Channel<T> *channel = nullptr;
         if (!map[name]) {
             auto re = std::make_unique<RegistryEntry<T>>(*this);
             re->ti = ti;
