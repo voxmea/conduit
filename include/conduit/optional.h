@@ -74,7 +74,9 @@ struct Optional {
     Optional(OptionalNull &&) : engaged_(false) {}
     Optional(const Optional &o) : engaged_(o.engaged_)
     {
-        if (engaged_) new (&buf) T(*o);
+        if (engaged_) {
+            new (&buf) T(*o);
+        }
     }
     Optional(Optional &&o) noexcept(std::is_nothrow_move_constructible<T>::value) : engaged_(o.engaged_)
     {
@@ -98,19 +100,22 @@ struct Optional {
 
     Optional &operator=(const Optional &o)
     {
-        if (this == &o)
+        if (this == &o) {
             return *this;
+        }
         destroy();
         engaged_ = o.engaged_;
-        if (engaged_)
+        if (engaged_) {
             new (&buf) T(*o);
+        }
         return *this;
     }
 
     Optional &operator=(Optional &&o) noexcept(std::is_nothrow_move_constructible<T>::value)
     {
-        if (this == &o)
+        if (this == &o) {
             return *this;
+        }
         destroy();
         engaged_ = o.engaged_;
         if (engaged_) {

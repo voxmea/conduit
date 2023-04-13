@@ -215,8 +215,9 @@ struct Channel<R(T...)> final : public ChannelBase
     template <typename R_ = R, typename EnableRet = typename std::enable_if<std::is_same<R_, void>::value>::type>
     void operator()(const T &...t)
     {
-        if (callbacks->empty())
+        if (callbacks->empty()) {
             return;
+        }
 
         #ifdef CONDUIT_CHANNEL_TIMES
         auto start = std::chrono::high_resolution_clock::now();
@@ -227,8 +228,9 @@ struct Channel<R(T...)> final : public ChannelBase
             c.cb(t...);
         }
         in_callbacks = false;
-        if (!pending_unsubscribe.empty())
+        if (!pending_unsubscribe.empty()) {
             unsubscribe_();
+        }
 
         #ifdef CONDUIT_CHANNEL_TIMES
         auto end = std::chrono::high_resolution_clock::now();
@@ -240,8 +242,9 @@ struct Channel<R(T...)> final : public ChannelBase
     template <typename R_ = R, typename EnableRet = typename std::enable_if<!std::is_same<R_, void>::value, R_>::type>
     std::vector<conduit::Optional<R>> operator()(const T &... t)
     {
-        if (callbacks->empty())
+        if (callbacks->empty()) {
             return std::vector<conduit::Optional<R>>();
+        }
 
         ret.clear();
 
@@ -254,16 +257,19 @@ struct Channel<R(T...)> final : public ChannelBase
             ret.emplace_back(c.cb(t...));
         }
         in_callbacks = false;
-        if (!pending_unsubscribe.empty())
+        if (!pending_unsubscribe.empty()) {
             unsubscribe_();
+        }
 
         if (!resolves->empty()) {
             in_resolves = true;
-            for (auto &r : *resolves)
+            for (auto &r : *resolves) {
                 r.cb(ret);
+            }
             in_resolves = false;
-            if (!pending_unresolve.empty())
+            if (!pending_unresolve.empty()) {
                 unresolve_();
+            }
         }
 
         #ifdef CONDUIT_CHANNEL_TIMES
@@ -292,8 +298,9 @@ private:
         auto pos = std::find_if(callbacks->begin(), callbacks->end(), [client_name] (struct Channel<R(T...)>::Callback &cb) {
             return cb.name == client_name;
         });
-        if (pos == callbacks->end())
+        if (pos == callbacks->end()) {
             return;
+        }
         pending_unsubscribe.push_back(std::distance(callbacks->begin(), pos));
         if (!in_callbacks) {
             unsubscribe_();
@@ -302,8 +309,9 @@ private:
 
     void unsubscribe(size_t index)
     {
-        if (index < callbacks->size())
+        if (index < callbacks->size()) {
             pending_unsubscribe.push_back(index);
+        }
         if (!in_callbacks) {
             unsubscribe_();
         }
@@ -326,8 +334,9 @@ private:
         auto pos = std::find_if(resolves->begin(), resolves->end(), [client_name] (struct Channel<R(T...)>::Callback &cb) {
             return cb.name == client_name;
         });
-        if (pos == resolves->end())
+        if (pos == resolves->end()) {
             return;
+        }
         pending_unresolve.push_back(std::distance(resolves->begin(), pos));
         if (!in_callbacks) {
             unsubscribe_();
@@ -336,8 +345,9 @@ private:
 
     void unresolve(size_t index)
     {
-        if (index < resolves->size())
+        if (index < resolves->size()) {
             pending_unresolve.push_back(index);
+        }
         if (!in_callbacks) {
             unresolve_();
         }
@@ -499,8 +509,9 @@ struct ChannelInterface<R(T...)>
             detail::call_print_arg(CONDUIT_LOGGER, t...);
             CONDUIT_LOGGER << ")\n";
         }
-        if (c.callbacks->size() == 0)
+        if (c.callbacks->size() == 0) {
             return typename Channel<R(T...)>::OperatorReturn();
+        }
         return c(t...);
     }
 
@@ -574,8 +585,9 @@ struct OptupleImpl : Optuple
     void fire(std::index_sequence<I...>)
     {
         callback(detail::TupleGetVal<I>::get(data)...);
-        if (response)
+        if (response) {
             response();
+        }
         reset();
     }
 
@@ -1103,8 +1115,9 @@ struct Registrar
     // TODO: fix the recursive loop so that swap(pending_views, copy) isn't necessary
     void match_pending_views(std::string name)
     {
-        if (pending_views.find(name) == pending_views.end())
+        if (pending_views.find(name) == pending_views.end()) {
             return;
+        }
         decltype(pending_views) copy;
         using std::swap;
         swap(pending_views, copy);;

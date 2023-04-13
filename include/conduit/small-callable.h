@@ -96,14 +96,16 @@ public:
 
     SmallCallable(const SmallCallable &o) : mem_size(o.mem_size)
     {
-        if (o.mem_size)
+        if (o.mem_size) {
             o.holder_base->clone(reinterpret_cast<char *>(holder_base));
+        }
     }
 
     SmallCallable(SmallCallable &&o) : mem_size(o.mem_size)
     {
-        if (o.mem_size)
+        if (o.mem_size) {
             o.holder_base->clone(reinterpret_cast<char *>(holder_base));
+        }
     }
 
     template <typename V>
@@ -127,8 +129,9 @@ public:
 
     SmallCallable &operator=(const SmallCallable &o)
     {
-        if (this == &o)
+        if (this == &o) {
             return *this;
+        }
         destroy();
         o.holder_base->clone(reinterpret_cast<char *>(holder_base));
         mem_size = o.mem_size;
