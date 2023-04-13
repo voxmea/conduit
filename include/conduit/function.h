@@ -84,8 +84,9 @@ public:
     {
         if (buf != nullptr) {
             destruct(buf);
-            if (buf != &internal_storage)
+            if (buf != &internal_storage) {
                 free(buf);
+            }
             buf = nullptr;
         }
     }
@@ -97,8 +98,9 @@ public:
 
     Function &operator =(const Function &o)
     {
-        if (this == &o)
+        if (this == &o) {
             return *this;
+        }
 
         this->~Function();
 
@@ -106,15 +108,17 @@ public:
         destruct = o.destruct;
         clone = o.clone;
 
-        if (o.clone != nullptr)
+        if (o.clone != nullptr) {
             o.clone(this, &o);
+        }
         return *this;
     }
 
     Function &operator =(Function &&o)
     {
-        if (this == &o)
+        if (this == &o) {
             return *this;
+        }
 
         this->~Function();
 
