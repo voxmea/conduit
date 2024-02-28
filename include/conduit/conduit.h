@@ -147,7 +147,7 @@ namespace detail
     }
 
     template <typename T>
-    typename std::enable_if<!detail::has_putto_operator<T>::value>::type print_arg(std::ostream &stream, __attribute__ ((unused)) T &&t)
+    typename std::enable_if<!detail::has_putto_operator<T>::value>::type print_arg(std::ostream &stream, T &&)
     {
         stream << demangle(typeid(T).name());
     }
@@ -497,17 +497,9 @@ struct ChannelInterface<R(T...)>
     // helper for Merge below
     using signature_return_type = R;
 
-    // Make sure we're a POD.
-    #ifdef CONDUIT_SOURCE_STRING_INTERNING
-    ChannelInterface(uint64_t id, Channel<R(T...)> *c) : source_id(id), channel(c)
-    {
-    }
-    #else
-    ChannelInterface(std::string id, Channel<R(T...)> *c) : source_id(id), channel(c)
-    {
-    }
-    #endif
-
+    //
+    // No special member function so we are an aggregate type
+    //
     ~ChannelInterface() = default;
 
     typename Channel<R(T...)>::OperatorReturn operator()(const T &...t) const
