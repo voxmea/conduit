@@ -147,7 +147,7 @@ namespace detail
     }
 
     template <typename T>
-    typename std::enable_if<!detail::has_putto_operator<T>::value>::type print_arg(std::ostream &stream, T &&t)
+    typename std::enable_if<!detail::has_putto_operator<T>::value>::type print_arg(std::ostream &stream, T &&)
     {
         stream << demangle(typeid(T).name());
     }
@@ -497,8 +497,9 @@ struct ChannelInterface<R(T...)>
     // helper for Merge below
     using signature_return_type = R;
 
-    // Make sure we're a POD.
-    ChannelInterface() = default;
+    //
+    // No special member function so we are an aggregate type
+    //
     ~ChannelInterface() = default;
 
     typename Channel<R(T...)>::OperatorReturn operator()(const T &...t) const
@@ -794,8 +795,8 @@ struct View<R(T...)> : ViewBase
     template <typename U, typename V, typename Ret, typename ...Args>
     std::enable_if_t<IsTuple<typename CallableInfo<V>::return_type>::value> set_subscribe_function(ChannelInterface<U> ci, V &&v, Ret(*)(Args...))
     {
-        subscribe_function = [=] (conduit::Function<R(const T &...)> cb, std::string name) {
-            ci.channel->registrar.template subscribe<U>(ci, [=] (const Args &...args) {
+        subscribe_function = [this, ci, v] (conduit::Function<R(const T &...)> cb, std::string name) {
+            ci.channel->registrar.template subscribe<U>(ci, [this, cb, v] (const Args &...args) {
                 return this->apply(cb, v(args...), std::make_index_sequence<std::tuple_size<typename CallableInfo<V>::return_type>::value>{});
             }, name);
         };
